@@ -68,3 +68,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t formelay:ci .
+
+  captcha-live:
+    name: CAPTCHA live provider tests
+    runs-on: ubuntu-latest
+    # Hits Cloudflare Turnstile's and hCaptcha's real verify endpoints with
+    # their official public test key pairs (see internal/captcha/live_test.go).
+    # continue-on-error: a third-party outage here shouldn't block an
+    # unrelated PR merge, but a real regression still shows up clearly.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache: true
+      - run: go test -tags=live ./internal/captcha/... -v

@@ -31,18 +31,20 @@ make race                  # go test -race ./...
 make tidy                   # go mod tidy
 make vulncheck               # govulncheck ./...
 make test-integration        # ratelimit/valkey suite against a real Valkey, via docker-compose.test.yml
+make test-live                # captcha suite against the real Turnstile/hCaptcha verify endpoints
 make release-snapshot        # local goreleaser dry run (binaries + Docker images, no publish)
 ```
 
 A `.devcontainer/` is included if you'd rather develop inside a container directly.
 
-GitHub Actions runs gofmt/vet/build/`-race`-tests/`govulncheck`/the Valkey integration suite on every push and pull request (`.github/workflows/ci.yml`).
+GitHub Actions runs gofmt/vet/build/`-race`-tests/`govulncheck`/the Valkey integration suite/the CAPTCHA live suite on every push and pull request (`.github/workflows/ci.yml`). The live-provider job is `continue-on-error`: a genuine regression still shows up clearly, but a Cloudflare/hCaptcha outage doesn't block an unrelated PR.
 
 ## Testing approach
 
 - Unit tests live next to the code they cover and run with `make test`/`make race`; no network or Docker needed.
 - `internal/ratelimit/valkey` additionally has an `integration` build-tagged suite (`internal/ratelimit/valkey/integration_test.go`) that only runs against a real Valkey, driven by `make test-integration` via `docker-compose.test.yml`. It's the one package where the in-process unit tests can't prove the thing that actually matters, that state is genuinely shared across two independently-constructed `Store` instances, standing in for two Formelay replicas.
 - `internal/api`'s handler tests drive the real submission pipeline end to end (`httptest`, a fake rate limiter, a real `app.App`) rather than mocking individual steps, so they catch pipeline-ordering bugs a narrower unit test would miss.
+- `internal/captcha` additionally has a `live` build-tagged suite (`internal/captcha/live_test.go`, `make test-live`) that calls the real Turnstile and hCaptcha verify endpoints using each provider's official public test key pairs, no account or secret of your own needed. The regular `TestGenericVerifier*` unit tests only prove our code talks correctly to a fake server we wrote ourselves; this suite proves the request shape (field names, encoding, response parsing) matches what the real provider actually expects, including a `provider: generic` case (manually-configured fields, no preset) reused against Turnstile's real endpoint, and a negative case (Turnstile's always-fail test secret) so a `success: false` response is exercised too, not just `true`.
 
 ## Extending Formelay
 

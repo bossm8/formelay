@@ -2,7 +2,7 @@ GO_IMAGE := golang:1.27-bookworm
 GOMOD_VOLUME := formelay-gomod
 DOCKER_RUN := docker run --rm -v $(CURDIR):/src -w /src -v $(GOMOD_VOLUME):/go/pkg/mod -e CGO_ENABLED=0 -e GOFLAGS=-mod=mod $(GO_IMAGE)
 
-.PHONY: tidy fmt fmt-check build vet test race vulncheck test-integration docker-build compose-up compose-down release-snapshot
+.PHONY: tidy fmt fmt-check build vet test race vulncheck test-integration test-live docker-build compose-up compose-down release-snapshot
 
 tidy:
 	$(DOCKER_RUN) go mod tidy
@@ -33,6 +33,12 @@ vulncheck:
 test-integration:
 	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from integration-test
 	docker compose -f docker-compose.test.yml down -v
+
+# CAPTCHA provider tests against real Turnstile/hCaptcha verify endpoints,
+# using each provider's official public test key pairs (no account/secret
+# of your own needed, no browser/widget involved). Requires internet access.
+test-live:
+	$(DOCKER_RUN) go test -tags=live ./internal/captcha/... -v
 
 docker-build:
 	docker build -t formelay:dev .
