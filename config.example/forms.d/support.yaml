@@ -1,0 +1,70 @@
+id: support
+display_name: "Support Request"
+enabled: true
+
+allowed_origins:
+  - "https://example.com"
+  - "https://www.example.com"
+
+auth:
+  site_key: "REPLACE_ME_WITH_OUTPUT_OF_formelay_keygen"
+  transport: header
+  header_name: "X-Formelay-Site-Key"
+
+honeypot:
+  field_name: "website"
+
+# Public support forms are a common bot/scraper target, so this example
+# turns on both extra layers CAPTCHA and the AI classifier disabled in the
+# simpler contact form example. Both need real credentials before you flip
+# `enabled: true` (see .env.example).
+captcha:
+  enabled: false   # set true once FORM_SUPPORT_TURNSTILE_SECRET is real
+  provider: turnstile
+  secret_env: "FORM_SUPPORT_TURNSTILE_SECRET"
+  response_field: "cf-turnstile-response"
+  on_error: fail_closed
+
+spam_filter:
+  enabled: false   # set true once SPAM_FILTER_API_KEY is real
+  provider:
+    type: ai
+    api_base: "https://api.openai.com/v1"
+    api_key_env: "SPAM_FILTER_API_KEY"
+    model: "gpt-4o-mini"
+    timeout: 5s
+  # Uses the built-in, injection-hardened default prompt (no
+  # system_template/user_template override needed for this example).
+  on_spam: deliver_tagged   # unlike contact.yaml's `route`, just tag and
+                             # deliver normally — {{ .Meta.SpamSuspected }}
+                             # is available in support-email-body.tmpl.
+  on_error: deliver
+
+rate_limit:
+  per_ip: {rate: 5, window: 1m, burst: 5}
+  per_form: {rate: 60, window: 1m, burst: 15}
+
+fields:
+  required: ["name", "email", "subject", "message"]
+  validators:
+    email: "email"
+  max_field_length: 5000
+
+channels_required: any
+
+channels:
+  - id: email-owner
+    type: email
+    enabled: true
+    config:
+      to: ["support@example.com"]
+      subject_template: "support-email-subject.tmpl"
+      body_template: "support-email-body.tmpl"
+      body_type: html
+
+  - id: discord-alerts
+    type: discord
+    enabled: true
+    config:
+      webhook_url_env: "FORM_SUPPORT_DISCORD_WEBHOOK"
+      template: "support-discord.tmpl"

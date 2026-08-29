@@ -1,0 +1,30 @@
+# Integration test harness: a real Valkey instance plus a throwaway Go
+# container that runs the ratelimit/valkey integration suite against it.
+# Used by `make test-integration` and by CI; not part of the normal
+# docker-compose.yml deployment stack.
+services:
+  valkey:
+    image: valkey/valkey:8
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  integration-test:
+    image: golang:1.27-bookworm
+    working_dir: /src
+    volumes:
+      - .:/src
+      - gomod-cache:/go/pkg/mod
+    environment:
+      - VALKEY_TEST_ADDR=valkey:6379
+      - CGO_ENABLED=0
+      - GOFLAGS=-mod=mod
+    depends_on:
+      valkey:
+        condition: service_healthy
+    command: ["go", "test", "-tags=integration", "-count=1", "-v", "./internal/ratelimit/valkey/..."]
+
+volumes:
+  gomod-cache:

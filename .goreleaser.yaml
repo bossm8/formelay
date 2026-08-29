@@ -1,0 +1,79 @@
+version: 2
+
+project_name: formelay
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: formelay
+    main: ./cmd/formelay
+    binary: formelay
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/bossm8/formelay/internal/version.Version={{ .Version }}
+      - -X github.com/bossm8/formelay/internal/version.Commit={{ .Commit }}
+      - -X github.com/bossm8/formelay/internal/version.Date={{ .Date }}
+
+archives:
+  - id: formelay
+    ids: [formelay]
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+# A single multi-arch image built via buildx (no separate manifest-joining
+# step needed, unlike the older dockers/docker_manifests sections).
+dockers_v2:
+  - id: formelay
+    ids: [formelay]
+    dockerfile: Dockerfile.goreleaser
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    images:
+      - "ghcr.io/bossm8/formelay"
+    tags:
+      - "{{ .Version }}"
+      - "latest"
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.description": "Receive website form submissions and relay them to email, Discord, or a webhook."
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.created": "{{ .Date }}"
+      # Static, not {{ .GitURL }}: that template resolves from the git
+      # remote at build time and comes back empty for any build that
+      # doesn't have one configured (e.g. this repo, pre-GitHub-push,
+      # or a snapshot build run locally) — a static URL is correct
+      # regardless of the git state the image happens to be built from.
+      "org.opencontainers.image.source": "https://github.com/bossm8/formelay"
+      "org.opencontainers.image.url": "https://github.com/bossm8/formelay"
+      "org.opencontainers.image.documentation": "https://github.com/bossm8/formelay/blob/main/README.md"
+      # No org.opencontainers.image.licenses yet: this repo has no LICENSE
+      # file/SPDX identifier chosen. Add one here once it does.
+
+release:
+  github:
+    owner: bossm8
+    name: formelay

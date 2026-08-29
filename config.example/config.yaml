@@ -1,0 +1,60 @@
+server:
+  listen_addr: "0.0.0.0:8080"
+  read_timeout: 5s
+  write_timeout: 10s
+  idle_timeout: 60s
+  read_header_timeout: 5s
+  shutdown_grace_period: 15s
+  trusted_proxies: []
+
+forms_dir: "/etc/formelay/forms.d"
+templates_dir: "/etc/formelay/templates"
+
+security:
+  max_body_bytes: 262144
+
+rate_limit:
+  backend: memory
+  default:
+    per_ip: {rate: 5, window: 1m, burst: 5}
+    per_form: {rate: 120, window: 1m, burst: 30}
+    global: {rate: 1000, window: 1m, burst: 200}
+  cleanup_interval: 5m
+  bucket_idle_ttl: 10m
+  # valkey:
+  #   addresses: ["valkey:6379"]
+  #   password_env: "VALKEY_PASSWORD"
+  #   db: 0
+  #   dial_timeout: 2s
+  #   key_prefix: "formelay:ratelimit:"
+  #   on_error: allow
+
+smtp_defaults:
+  host: "smtp.example.com"
+  port: 587
+  username: "relay@example.com"
+  password_env: "SMTP_PASSWORD"
+  starttls: true
+  from: "Formelay <relay@example.com>"
+  timeout: 10s
+
+logging:
+  level: "info"
+  format: "json"
+  audit:
+    enabled: true
+    format: "json"
+    log_field_values: false
+
+reload:
+  watch_files: true
+  handle_sighup: true
+
+metrics:
+  enabled: true
+  listen_addr: "0.0.0.0:9090"
+  path: "/metrics"
+
+health:
+  liveness_path: "/healthz"
+  readiness_path: "/readyz"

@@ -1,0 +1,31 @@
+# Requires a .env file for the placeholder credentials referenced below —
+# copy .env.example to .env first (see README Quick start).
+services:
+  formelay:
+    build: .
+    image: formelay:dev
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # public submission API
+      - "9090:9090"   # metrics/health - keep internal-only in real deployments
+    environment:
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - FORM_CONTACT_DISCORD_WEBHOOK=${FORM_CONTACT_DISCORD_WEBHOOK:-}
+      - FORM_NEWSLETTER_DISCORD_WEBHOOK=${FORM_NEWSLETTER_DISCORD_WEBHOOK:-}
+      - FORM_SUPPORT_DISCORD_WEBHOOK=${FORM_SUPPORT_DISCORD_WEBHOOK:-}
+      - FORM_CONTACT_TURNSTILE_SECRET=${FORM_CONTACT_TURNSTILE_SECRET:-}
+      - FORM_SUPPORT_TURNSTILE_SECRET=${FORM_SUPPORT_TURNSTILE_SECRET:-}
+      - FORM_CONTACT_SPAM_DISCORD_WEBHOOK=${FORM_CONTACT_SPAM_DISCORD_WEBHOOK:-}
+      - SPAM_FILTER_API_KEY=${SPAM_FILTER_API_KEY:-}
+      # - VALKEY_PASSWORD=${VALKEY_PASSWORD:-}
+    volumes:
+      - ./config.example/config.yaml:/etc/formelay/config.yaml:ro
+      - ./config.example/forms.d:/etc/formelay/forms.d:ro
+      - ./config.example/templates:/etc/formelay/templates:ro
+
+  # Optional: shared rate-limit state across multiple formelay replicas.
+  # Enable by setting rate_limit.backend: valkey in config.yaml.
+  # valkey:
+  #   image: valkey/valkey:8
+  #   restart: unless-stopped
+  #   command: ["valkey-server", "--requirepass", "${VALKEY_PASSWORD:-}"]

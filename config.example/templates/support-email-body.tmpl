@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<body style="font-family: sans-serif;">
+  {{- if .Meta.SpamSuspected }}
+  <p style="background:#fee;color:#900;padding:8px;border-radius:4px;">
+    <strong>Flagged as suspected spam</strong> by the AI classifier.
+    {{- if .Meta.SpamReason }} Reason: {{ .Meta.SpamReason }}{{ end }}
+  </p>
+  {{- end }}
+  <h2>{{ .Fields.subject }}</h2>
+  <table>
+    <tr><td><strong>Name</strong></td><td>{{ .Fields.name }}</td></tr>
+    <tr><td><strong>Email</strong></td><td>{{ .Fields.email }}</td></tr>
+    <tr><td><strong>Message</strong></td><td>{{ .Fields.message }}</td></tr>
+  </table>
+  <hr>
+  <p style="color:#888;font-size:12px;">
+    Submitted {{ .Meta.Timestamp.Format "2006-01-02 15:04:05 MST" }} from {{ .Meta.SourceIP }}
+    (origin: {{ .Meta.Origin }}) &mdash; request {{ .Meta.RequestID }}
+  </p>
+</body>
+</html>

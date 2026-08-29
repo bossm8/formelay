@@ -1,0 +1,19 @@
+{
+  "username": "Formelay",
+  "embeds": [
+    {
+      "title": {{ .Fields.subject | json }},
+      "color": {{ if .Meta.SpamSuspected }}15158332{{ else }}5814783{{ end }},
+      "fields": [
+        {"name": "Name", "value": {{ .Fields.name | json }}, "inline": true},
+        {"name": "Email", "value": {{ .Fields.email | json }}, "inline": true},
+        {"name": "Message", "value": {{ .Fields.message | json }}}
+        {{- if .Meta.SpamSuspected }},
+        {"name": "⚠️ Suspected spam", "value": {{ default "(no reason given)" .Meta.SpamReason | json }}}
+        {{- end }}
+      ],
+      "footer": {"text": {{ printf "req %s from %s" .Meta.RequestID .Meta.SourceIP | json }}},
+      "timestamp": {{ .Meta.Timestamp.Format "2006-01-02T15:04:05Z07:00" | json }}
+    }
+  ]
+}

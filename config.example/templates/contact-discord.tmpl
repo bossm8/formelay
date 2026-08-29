@@ -1,0 +1,19 @@
+{
+  "username": "Formelay",
+  "embeds": [
+    {
+      "title": "New submission: {{ .Form.DisplayName }}",
+      "color": 5814783,
+      "fields": [
+        {"name": "Name", "value": {{ .Fields.name | json }}, "inline": true},
+        {"name": "Email", "value": {{ .Fields.email | json }}, "inline": true},
+        {"name": "Message", "value": {{ .Fields.message | json }}}
+        {{- if .Meta.SpamSuspected }},
+        {"name": "Spam review", "value": {{ .Meta.SpamReason | json }}}
+        {{- end }}
+      ],
+      "footer": {"text": {{ printf "req %s from %s" .Meta.RequestID .Meta.SourceIP | json }}},
+      "timestamp": {{ .Meta.Timestamp.Format "2006-01-02T15:04:05Z07:00" | json }}
+    }
+  ]
+}

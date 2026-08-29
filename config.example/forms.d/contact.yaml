@@ -1,0 +1,80 @@
+id: contact
+display_name: "Contact Form"
+enabled: true
+
+allowed_origins:
+  - "https://example.com"
+  - "https://www.example.com"
+
+auth:
+  # A public capability token, not a secret. Generate with `formelay keygen`
+  # and embed it in your site's JS/form as you would a reCAPTCHA/Turnstile
+  # site key.
+  site_key: "REPLACE_ME_WITH_OUTPUT_OF_formelay_keygen"
+  transport: header
+  header_name: "X-Formelay-Site-Key"
+
+honeypot:
+  field_name: "website"
+
+# CAPTCHA is optional; disabled by default in this example.
+captcha:
+  enabled: false
+  provider: turnstile
+  secret_env: "FORM_CONTACT_TURNSTILE_SECRET"
+  response_field: "cf-turnstile-response"
+  on_error: fail_closed
+
+# AI spam classification is optional; disabled by default in this example.
+spam_filter:
+  enabled: false
+  provider:
+    type: ai
+    api_base: "https://api.openai.com/v1"
+    api_key_env: "SPAM_FILTER_API_KEY"
+    model: "gpt-4o-mini"
+    timeout: 5s
+  # system_template / user_template left unset: uses the built-in,
+  # injection-hardened default prompt.
+  on_spam: route
+  on_error: deliver
+  route:
+    spam_channels: ["spam-review-discord"]
+    error_channels: []
+    spam_template: "spam-review.tmpl"
+
+rate_limit:
+  per_ip: {rate: 3, window: 1m, burst: 3}
+  per_form: {rate: 60, window: 1m, burst: 15}
+
+fields:
+  required: ["name", "email", "message"]
+  validators:
+    email: "email"
+  max_field_length: 5000
+
+channels_required: any
+
+channels:
+  - id: email-owner
+    type: email
+    enabled: true
+    config:
+      to: ["owner@example.com"]
+      subject_template: "contact-email-subject.tmpl"
+      body_template: "contact-email-body.tmpl"
+      body_type: html
+
+  - id: discord-alerts
+    type: discord
+    enabled: true
+    config:
+      webhook_url_env: "FORM_CONTACT_DISCORD_WEBHOOK"
+      template: "contact-discord.tmpl"
+
+  - id: spam-review-discord
+    type: discord
+    enabled: false
+    config:
+      webhook_url_env: "FORM_CONTACT_SPAM_DISCORD_WEBHOOK"
+      template: "contact-discord.tmpl"

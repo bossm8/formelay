@@ -1,0 +1,42 @@
+id: newsletter
+display_name: "Newsletter Signup"
+enabled: true
+
+allowed_origins:
+  - "https://example.com"
+  - "https://www.example.com"
+
+auth:
+  site_key: "REPLACE_ME_WITH_OUTPUT_OF_formelay_keygen"
+  transport: header
+  header_name: "X-Formelay-Site-Key"
+
+# A signup form has one juicy field for bots to fill in: "company" reads
+# naturally on a real form (so a human never notices it) but is exactly the
+# kind of field a scripted bot auto-fills.
+honeypot:
+  field_name: "company"
+
+# A single required field keeps signup friction low; still validated as a
+# real email address.
+fields:
+  required: ["email"]
+  validators:
+    email: "email"
+  max_field_length: 320   # RFC 5321 max mailbox length
+
+# Tighter than the contact form's default: a signup box is an easier bot
+# target than a form someone fills in deliberately.
+rate_limit:
+  per_ip: {rate: 2, window: 1m, burst: 2}
+  per_form: {rate: 100, window: 1m, burst: 20}
+
+channels_required: any
+
+channels:
+  - id: discord-signups
+    type: discord
+    enabled: true
+    config:
+      webhook_url_env: "FORM_NEWSLETTER_DISCORD_WEBHOOK"
+      template: "newsletter-discord.tmpl"

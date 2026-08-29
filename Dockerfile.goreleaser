@@ -1,0 +1,21 @@
+# Used by GoReleaser only: it builds the binary itself (see .goreleaser.yaml)
+# and hands it to this Dockerfile as build context, rather than running `go
+# build` inside the image. For a local/manual image build from source, use
+# the top-level Dockerfile instead.
+FROM gcr.io/distroless/static-debian12:nonroot
+
+# goreleaser's dockers_v2 multi-platform build context nests the binary
+# under <goos>/<goarch>/ (buildx sets these automatically per platform).
+ARG TARGETOS
+ARG TARGETARCH
+COPY ${TARGETOS}/${TARGETARCH}/formelay /usr/local/bin/formelay
+
+USER nonroot:nonroot
+
+EXPOSE 8080 9090
+
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+    CMD ["/usr/local/bin/formelay", "healthcheck"]
+
+ENTRYPOINT ["/usr/local/bin/formelay"]
+CMD ["--config", "/etc/formelay/config.yaml"]

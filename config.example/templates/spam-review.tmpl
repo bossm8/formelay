@@ -1,0 +1,18 @@
+{
+  "username": "Formelay",
+  "embeds": [
+    {
+      "title": "Suspected spam on {{ .Form.DisplayName }}",
+      "color": 15158332,
+      "fields": [
+        {"name": "AI classifier reason", "value": {{ default "(none given)" .Meta.SpamReason | json }}},
+        {"name": "Name", "value": {{ .Fields.name | json }}, "inline": true},
+        {"name": "Email", "value": {{ .Fields.email | json }}, "inline": true},
+        {"name": "Subject", "value": {{ .Fields.subject | json }}},
+        {"name": "Message", "value": {{ .Fields.message | json }}}
+      ],
+      "footer": {"text": {{ printf "req %s from %s" .Meta.RequestID .Meta.SourceIP | json }}},
+      "timestamp": {{ .Meta.Timestamp.Format "2006-01-02T15:04:05Z07:00" | json }}
+    }
+  ]
+}
