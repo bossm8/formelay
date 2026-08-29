@@ -30,10 +30,8 @@ LABEL org.opencontainers.image.title="formelay" \
       org.opencontainers.image.created="${CREATED}" \
       org.opencontainers.image.source="https://github.com/bossm8/formelay" \
       org.opencontainers.image.url="https://github.com/bossm8/formelay" \
-      org.opencontainers.image.documentation="https://github.com/bossm8/formelay/blob/main/README.md"
-# No org.opencontainers.image.licenses yet: this repo has no LICENSE file/
-# SPDX identifier chosen. Add one here (and above, for the release image)
-# once it does.
+      org.opencontainers.image.documentation="https://github.com/bossm8/formelay/blob/main/README.md" \
+      org.opencontainers.image.licenses="Apache-2.0"
 
 USER nonroot:nonroot
 

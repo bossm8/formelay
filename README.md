@@ -10,6 +10,7 @@
   <a href="https://github.com/bossm8/formelay/actions/workflows/ci.yml"><img src="https://github.com/bossm8/formelay/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="https://github.com/bossm8/formelay/releases/latest"><img src="https://img.shields.io/github/v/release/bossm8/formelay?sort=semver" alt="Latest release"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/bossm8/formelay" alt="Go version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/bossm8/formelay" alt="License"></a>
 </p>
 
 # Formelay
@@ -110,22 +111,7 @@ Read this before deploying anything that will see real traffic.
 
 ## Development
 
-Go isn't required on your host; everything runs through Docker.
-
-```bash
-make build             # go build ./...
-make vet                # go vet ./...
-make test                 # go test ./...
-make race                  # go test -race ./...
-make tidy                   # go mod tidy
-make vulncheck               # govulncheck ./...
-make test-integration        # ratelimit/valkey suite against a real Valkey, via docker-compose.test.yml
-make release-snapshot        # local goreleaser dry run (binaries + Docker images, no publish)
-```
-
-A `.devcontainer/` is included if you'd rather develop inside a container directly.
-
-GitHub Actions runs gofmt/vet/build/`-race`-tests/`govulncheck`/the Valkey integration suite on every push and pull request (`.github/workflows/ci.yml`).
+Go isn't required on your host; build, test, and the Valkey integration suite all run through Docker. Project layout, `make` targets, testing approach, and how to add a new delivery channel/CAPTCHA provider/spam classifier are all in **[docs/develop.md](docs/develop.md)**.
 
 ## Releases
 
@@ -151,7 +137,7 @@ docker run -d --name formelay \
   ghcr.io/bossm8/formelay:latest
 ```
 
-Every image carries standard OCI labels (title, description, version, revision, build date, source/documentation URLs):
+Every image carries standard OCI labels (title, description, version, revision, build date, license, source/documentation URLs):
 
 ```bash
 docker inspect --format '{{json .Config.Labels}}' ghcr.io/bossm8/formelay:latest
@@ -171,19 +157,6 @@ tar -xzf formelay_0.1.0_linux_amd64.tar.gz
 
 Replace `v0.1.0`/`0.1.0` and `linux_amd64` with the actual version and your platform (`darwin_arm64`, `linux_arm64`, ...) from the release's asset list.
 
-## Project layout
+## License
 
-```text
-cmd/formelay/         entrypoint: wiring, keygen/healthcheck subcommands
-internal/config/      YAML schema, loading, validation
-internal/app/         composition root: the single atomically swapped runtime
-internal/api/         HTTP handlers: the submission pipeline
-internal/notify/      Notifier interface plus email/discord/webhook
-internal/captcha/     generic CAPTCHA verifier and provider presets
-internal/spamfilter/  AI content classifier
-internal/ratelimit/   memory and Valkey rate limit backends
-internal/render/      template parsing and execution
-internal/sanitize/    input normalization
-internal/audit/       structured submission logging
-internal/metrics/     Prometheus collectors
-```
+[Apache License 2.0](LICENSE).
