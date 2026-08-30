@@ -19,7 +19,7 @@
 
 # formelay
 
-**Receive website form submissions and relay them straight to your inbox.**
+**Receive form submissions from static websites and relay them straight to your inbox.**
 
 formelay is a lightweight, self-hosted relay for web form submissions. Point a plain HTML `<form>` or a `fetch()` call at it, and it authenticates the request, filters out spam, renders a template you control, and forwards the result to email, Discord, or any webhook-based service.
 
