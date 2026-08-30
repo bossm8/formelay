@@ -32,20 +32,21 @@ make race                  # go test -race ./...
 make tidy                   # go mod tidy
 make vulncheck               # govulncheck ./...
 make deadcode                # whole-program reachability check (incl. tests) via golang.org/x/tools/cmd/deadcode
-make test-integration        # ratelimit/valkey suite against a real Valkey, via docker-compose.test.yml
+make test-integration        # ratelimit/valkey, email, and api suites against real Valkey/Mailpit/webhook-mirror, via docker-compose.test.yml
 make test-live                # captcha suite against the real Turnstile/hCaptcha verify endpoints
 make release-snapshot        # local goreleaser dry run (binaries + Docker images, no publish)
 ```
 
 A `.devcontainer/` is included if you'd rather develop inside a container directly.
 
-GitHub Actions runs gofmt/vet/build/`-race`-tests (with coverage uploaded to [Codecov](https://codecov.io/gh/bossm8/formelay))/`govulncheck`/`deadcode`/the Valkey integration suite/the CAPTCHA live suite on every push and pull request (`.github/workflows/ci.yml`). The live-provider job is `continue-on-error`: a genuine regression still shows up clearly, but a Cloudflare/hCaptcha outage doesn't block an unrelated PR. `deadcode` blocks the build: unlike the third-party-dependent live suite, an unreachable-code finding is a real regression in our own code.
+GitHub Actions runs gofmt/vet/build/`-race`-tests (with coverage uploaded to [Codecov](https://codecov.io/gh/bossm8/formelay))/`govulncheck`/`deadcode`/the integration suite (Valkey, email, api)/the CAPTCHA live suite on every push and pull request (`.github/workflows/ci.yml`). The live-provider job is `continue-on-error`: a genuine regression still shows up clearly, but a Cloudflare/hCaptcha outage doesn't block an unrelated PR. `deadcode` blocks the build: unlike the third-party-dependent live suite, an unreachable-code finding is a real regression in our own code.
 
 ## Testing approach
 
 - Unit tests live next to the code they cover and run with `make test`/`make race`; no network or Docker needed.
 - `internal/ratelimit/valkey` additionally has an `integration` build-tagged suite (`internal/ratelimit/valkey/integration_test.go`) that only runs against a real Valkey, driven by `make test-integration` via `docker-compose.test.yml`. It's the one package where the in-process unit tests can't prove the thing that actually matters, that state is genuinely shared across two independently-constructed `Store` instances, standing in for two formelay replicas.
-- `internal/api`'s handler tests drive the real submission pipeline end to end (`httptest`, a fake rate limiter, a real `app.App`) rather than mocking individual steps, so they catch pipeline-ordering bugs a narrower unit test would miss.
+- `internal/notify/email` additionally has an `integration` build-tagged suite (`internal/notify/email/integration_test.go`) that sends real mail via a disposable [Mailpit](https://mailpit.axllent.org/) instance (also started by `docker-compose.test.yml`) and asserts on what it actually received (To/From/Subject/Reply-To/body) through Mailpit's JSON API — unit tests alone can only prove `Send`'s early-return validation paths, since there's no real SMTP conversation to have without a server to talk to.
+- `internal/api` additionally has an `integration` build-tagged suite (`internal/api/integration_test.go`) that drives real HTTP submissions through channels wired to Mailpit and to a small custom recorder (`cmd/webhookmirror`, also started by `docker-compose.test.yml`) standing in for the webhook/discord receiving end, covering normal delivery, `on_spam: deliver_tagged`, and `on_spam: route` — proving delivery content and the spam-routing path are correct against real receivers, not just in-process assertions. The always-on (non-tagged) handler tests in the same package still drive the real submission pipeline end to end (`httptest`, a fake rate limiter, a real `app.App`) rather than mocking individual steps, so they catch pipeline-ordering bugs a narrower unit test would miss; the `integration` suite extends that same philosophy to the actual wire-level receivers.
 - `internal/captcha` additionally has a `live` build-tagged suite (`internal/captcha/live_test.go`, `make test-live`) that calls the real Turnstile and hCaptcha verify endpoints using each provider's official public test key pairs, no account or secret of your own needed. The regular `TestGenericVerifier*` unit tests only prove our code talks correctly to a fake server we wrote ourselves; this suite proves the request shape (field names, encoding, response parsing) matches what the real provider actually expects, including a `provider: generic` case (manually-configured fields, no preset) reused against Turnstile's real endpoint, and a negative case (Turnstile's always-fail test secret) so a `success: false` response is exercised too, not just `true`.
 
 ## Extending formelay

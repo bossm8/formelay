@@ -143,7 +143,7 @@ Inherited by any `email` channel that doesn't override the same field itself.
 | `on_spam` | `deliver` \| `deliver_tagged` \| `drop` \| `route` | `deliver` | Action when the classifier says `SPAM`. |
 | `on_error` | `deliver` \| `deliver_tagged` \| `drop` \| `route` | `deliver` | Action when the classifier call itself fails — configured **independently** of `on_spam`, since a provider outage is "unknown," not "confirmed spam." |
 | `route.spam_channels`, `route.error_channels` | []string | `[]` | Channel `id`s (from this form's own `channels`) to notify instead of the normal set, used when the respective action is `route`. Empty means audit-log only. |
-| `route.spam_template`, `route.error_template` | string | — | A template shared by every channel in `route.spam_channels`/`error_channels` (see [Delivery templates](#delivery-templates)); `error_template` falls back to `spam_template` if unset. **Required** for `route` to actually deliver anywhere — with no template set, a routed verdict is silently dropped. |
+| `route.spam_template`, `route.error_template` | string | — | A template shared by every channel in `route.spam_channels`/`error_channels` (see [Delivery templates](#delivery-templates)); `error_template` falls back to `spam_template` if unset. **Required** when the respective action (`on_spam`/`on_error`) is `route` — config validation rejects a form at load/reload time if the needed template is missing. |
 
 `deliver`/`deliver_tagged` continue to the form's normal `channels`; `deliver_tagged` additionally sets `.Meta.SpamSuspected` (and `.Meta.SpamReason`) so a template can flag it. `drop` skips delivery entirely (still audit-logged).
 

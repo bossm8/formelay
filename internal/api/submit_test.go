@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -349,3 +350,165 @@ func equalStringMaps(a, b map[string]string) bool {
 }
 
 var _ ratelimit.Store = (*fakeRateLimiter)(nil)
+
+// erroringRateLimiter always fails, standing in for a rate-limit backend
+// outage (e.g. Valkey unreachable).
+type erroringRateLimiter struct{}
+
+func (erroringRateLimiter) Allow(context.Context, string, float64, float64, time.Duration) (bool, error) {
+	return false, errors.New("backend unreachable")
+}
+
+var _ ratelimit.Store = erroringRateLimiter{}
+
+// TestSubmit_RateLimiterBackendErrorFailsOpen documents a deliberate design
+// tradeoff (availability over strictness), not a bug: handleSubmit's rate
+// limit checks are `err == nil && !okRL`, so a backend error skips
+// enforcement entirely rather than blocking the request. A future change to
+// this tradeoff should be a conscious decision, not an accidental
+// regression, hence this test.
+func TestSubmit_RateLimiterBackendErrorFailsOpen(t *testing.T) {
+	s, _ := newTestServer(t, baseForm)
+	s.RateLimiter = erroringRateLimiter{}
+	form := url.Values{"name": {"Alice"}, "email": {"alice@example.com"}}
+	rec := doSubmit(t, s, "contact", form, map[string]string{"X-Formelay-Site-Key": "the-key"})
+	if rec.Code == http.StatusTooManyRequests {
+		t.Fatalf("rate limiter backend errors are expected to fail open (skip enforcement), got 429")
+	}
+}
+
+// spamAlwaysClassifier is a fake spamfilter.Classifier that always reports
+// spam, used to drive the SpamActionDrop path without a real AI provider.
+type spamAlwaysClassifier struct{}
+
+func (spamAlwaysClassifier) Classify(context.Context, render.SubmissionData) (spamfilter.Verdict, error) {
+	return spamfilter.Verdict{IsSpam: true, Reason: "test"}, nil
+}
+
+// auditCapture is a minimal slog handler that captures each log record's
+// top-level attributes as a map, so a test can assert on a specific
+// attribute (e.g. "status") without parsing raw JSON output.
+type auditCapture struct {
+	mu      sync.Mutex
+	records []map[string]any
+}
+
+func newAuditLogger(cap *auditCapture) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(&auditWriter{cap: cap}, nil))
+}
+
+// auditWriter implements io.Writer, decoding each JSON log line (one per
+// Write call, matching slog's handler behavior) into auditCapture.
+type auditWriter struct{ cap *auditCapture }
+
+func (w *auditWriter) Write(p []byte) (int, error) {
+	var rec map[string]any
+	if err := json.Unmarshal(p, &rec); err == nil {
+		w.cap.mu.Lock()
+		w.cap.records = append(w.cap.records, rec)
+		w.cap.mu.Unlock()
+	}
+	return len(p), nil
+}
+
+func (c *auditCapture) lastStatus(t *testing.T) string {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.records) == 0 {
+		t.Fatal("expected at least one audit record")
+	}
+	status, _ := c.records[len(c.records)-1]["status"].(string)
+	return status
+}
+
+// TestSubmit_HoneypotAndSpamDropResponsesAreIndistinguishable pins down a
+// stated anti-abuse property: a bot must not be able to tell, from the HTTP
+// response alone, whether it was caught by the honeypot or by the AI spam
+// filter (both must look like an ordinary success), even though the two
+// paths are clearly distinguished in the audit log for operators.
+func TestSubmit_HoneypotAndSpamDropResponsesAreIndistinguishable(t *testing.T) {
+	hpCap := &auditCapture{}
+	sHP, _ := newTestServer(t, baseForm)
+	sHP.Audit = audit.New(newAuditLogger(hpCap))
+	formHP := url.Values{"name": {"Bot"}, "email": {"bot@example.com"}, "website": {"http://spam.example"}}
+	recHP := doSubmit(t, sHP, "contact", formHP, map[string]string{"X-Formelay-Site-Key": "the-key"})
+
+	const spamForm = `
+id: contact
+allowed_origins: ["https://example.com"]
+auth:
+  site_key: "the-key"
+fields:
+  required: ["name", "email"]
+  validators:
+    email: "email"
+spam_filter:
+  enabled: true
+  provider:
+    type: fake-always-spam
+  on_spam: drop
+channels:
+  - id: wh
+    type: webhook
+    config:
+      url: "https://example.invalid/hook"
+      template: "body.tmpl"
+`
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.yaml"), `
+server:
+  listen_addr: "127.0.0.1:0"
+forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+templates_dir: "`+filepath.Join(dir, "templates")+`"
+security:
+  max_body_bytes: 65536
+rate_limit:
+  backend: memory
+  default:
+    per_ip: {rate: 100, window: 1m, burst: 100}
+    per_form: {rate: 100, window: 1m, burst: 100}
+    global: {rate: 1000, window: 1m, burst: 1000}
+`)
+	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), spamForm)
+	writeFile(t, filepath.Join(dir, "templates", "body.tmpl"), `{"name": {{ .Fields.name | json }}}`)
+
+	registries := app.Registries{
+		Notify:     notify.NewRegistry(),
+		Captcha:    captcha.NewRegistry(),
+		SpamFilter: spamfilter.NewRegistry(),
+	}
+	registries.Notify.Register(webhook.Type, webhook.New)
+	registries.SpamFilter.Register("fake-always-spam", func(map[string]any, spamfilter.PromptSource) (spamfilter.Classifier, error) {
+		return spamAlwaysClassifier{}, nil
+	})
+	a := app.New(filepath.Join(dir, "config.yaml"), registries)
+	if err := a.Reload(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	spamCap := &auditCapture{}
+	sSpam := &Server{
+		App:         a,
+		RateLimiter: &fakeRateLimiter{},
+		Audit:       audit.New(newAuditLogger(spamCap)),
+		Metrics:     metrics.New("test", "test", "test"),
+		IDGen:       func() string { return "test-request-id" },
+	}
+	formSpam := url.Values{"name": {"Alice"}, "email": {"alice@example.com"}}
+	recSpam := doSubmit(t, sSpam, "contact", formSpam, map[string]string{"X-Formelay-Site-Key": "the-key"})
+
+	if recHP.Code != http.StatusOK || recSpam.Code != http.StatusOK {
+		t.Fatalf("expected both paths to respond 200, got honeypot=%d spam=%d", recHP.Code, recSpam.Code)
+	}
+	if recHP.Body.String() != recSpam.Body.String() {
+		t.Fatalf("responses must be indistinguishable: honeypot body=%s, spam body=%s", recHP.Body.String(), recSpam.Body.String())
+	}
+
+	hpStatus, spamStatus := hpCap.lastStatus(t), spamCap.lastStatus(t)
+	if hpStatus != "spam_dropped_honeypot" {
+		t.Fatalf("honeypot audit status = %q, want spam_dropped_honeypot", hpStatus)
+	}
+	if spamStatus != "spam_dropped_ai" {
+		t.Fatalf("spam-filter audit status = %q, want spam_dropped_ai", spamStatus)
+	}
+}

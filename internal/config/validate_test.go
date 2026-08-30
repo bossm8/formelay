@@ -63,6 +63,7 @@ func TestValidateForm(t *testing.T) {
 		f.SpamFilter.Provider.Type = "ai"
 		f.SpamFilter.OnSpam = SpamActionRoute
 		f.SpamFilter.Route.SpamChannels = []string{"email-owner"}
+		f.SpamFilter.Route.SpamTemplate = "spam-review.tmpl"
 		if err := ValidateForm(f); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -75,6 +76,165 @@ func TestValidateForm(t *testing.T) {
 		f.SpamFilter.OnSpam = "explode"
 		if err := ValidateForm(f); err == nil {
 			t.Fatal("expected error for invalid on_spam action")
+		}
+	})
+
+	t.Run("invalid on_error action", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.OnError = "explode"
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for invalid on_error action")
+		}
+	})
+
+	t.Run("invalid auth transport", func(t *testing.T) {
+		f := base()
+		f.Auth.Transport = "carrier_pigeon"
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for invalid auth.transport")
+		}
+	})
+
+	t.Run("captcha enabled requires provider", func(t *testing.T) {
+		f := base()
+		f.Captcha.Enabled = true
+		f.Captcha.SecretEnv = "SECRET"
+		f.Captcha.ResponseField = "cf-turnstile-response"
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for missing captcha.provider")
+		}
+	})
+
+	t.Run("captcha enabled requires secret_env", func(t *testing.T) {
+		f := base()
+		f.Captcha.Enabled = true
+		f.Captcha.Provider = "turnstile"
+		f.Captcha.ResponseField = "cf-turnstile-response"
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for missing captcha.secret_env")
+		}
+	})
+
+	t.Run("captcha enabled requires response_field", func(t *testing.T) {
+		f := base()
+		f.Captcha.Enabled = true
+		f.Captcha.Provider = "turnstile"
+		f.Captcha.SecretEnv = "SECRET"
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for missing captcha.response_field")
+		}
+	})
+
+	t.Run("captcha invalid on_error rejected", func(t *testing.T) {
+		f := base()
+		f.Captcha.Enabled = true
+		f.Captcha.Provider = "turnstile"
+		f.Captcha.SecretEnv = "SECRET"
+		f.Captcha.ResponseField = "cf-turnstile-response"
+		f.Captcha.OnError = "maybe"
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for invalid captcha.on_error")
+		}
+	})
+
+	t.Run("captcha disabled skips validation even with bogus fields", func(t *testing.T) {
+		f := base()
+		f.Captcha.Enabled = false
+		f.Captcha.OnError = "maybe"
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error for disabled captcha: %v", err)
+		}
+	})
+
+	t.Run("channel missing id", func(t *testing.T) {
+		f := base()
+		f.Channels = []ChannelConfig{{Type: "email"}}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for channel missing id")
+		}
+	})
+
+	t.Run("channel missing type", func(t *testing.T) {
+		f := base()
+		f.Channels = []ChannelConfig{{ID: "email-owner"}}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for channel missing type")
+		}
+	})
+
+	t.Run("spam filter enabled requires provider type", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for missing spam_filter.provider.type")
+		}
+	})
+
+	t.Run("invalid channels_required", func(t *testing.T) {
+		f := base()
+		f.ChannelsRequired = "most"
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for invalid channels_required")
+		}
+	})
+
+	t.Run("on_spam route requires spam_template", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.OnSpam = SpamActionRoute
+		f.SpamFilter.Route.SpamChannels = []string{"email-owner"}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error: on_spam=route with no spam_template must be rejected (previously silently dropped delivery)")
+		}
+	})
+
+	t.Run("on_spam route with spam_template passes", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.OnSpam = SpamActionRoute
+		f.SpamFilter.Route.SpamChannels = []string{"email-owner"}
+		f.SpamFilter.Route.SpamTemplate = "spam-review.tmpl"
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("on_error route requires error_template or spam_template fallback", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.OnError = SpamActionRoute
+		f.SpamFilter.Route.ErrorChannels = []string{"email-owner"}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error: on_error=route with neither error_template nor spam_template must be rejected")
+		}
+	})
+
+	t.Run("on_error route falls back to spam_template", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.OnError = SpamActionRoute
+		f.SpamFilter.Route.ErrorChannels = []string{"email-owner"}
+		f.SpamFilter.Route.SpamTemplate = "spam-review.tmpl"
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: on_error=route should accept spam_template as a fallback: %v", err)
+		}
+	})
+
+	t.Run("on_error route with its own error_template passes", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.OnError = SpamActionRoute
+		f.SpamFilter.Route.ErrorChannels = []string{"email-owner"}
+		f.SpamFilter.Route.ErrorTemplate = "error-review.tmpl"
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 }
@@ -118,6 +278,44 @@ func TestValidateGlobal(t *testing.T) {
 		g.Server.TLS.KeyFile = "/nonexistent/key.pem"
 		if err := ValidateGlobal(g); err == nil {
 			t.Fatal("expected error for nonexistent cert/key files")
+		}
+	})
+
+	t.Run("empty listen_addr rejected", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.Server.ListenAddr = ""
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for empty server.listen_addr")
+		}
+	})
+
+	t.Run("empty forms_dir rejected", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.FormsDir = ""
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for empty forms_dir")
+		}
+	})
+
+	t.Run("valkey invalid on_error rejected", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.RateLimit.Backend = "valkey"
+		g.RateLimit.Valkey.Addresses = []string{"127.0.0.1:6379"}
+		g.RateLimit.Valkey.OnError = "maybe"
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for invalid rate_limit.valkey.on_error")
+		}
+	})
+
+	t.Run("valkey empty on_error is left unset by config layer, not defaulted to allow", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.RateLimit.Backend = "valkey"
+		g.RateLimit.Valkey.Addresses = []string{"127.0.0.1:6379"}
+		if err := ValidateGlobal(g); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if g.RateLimit.Valkey.OnError != "" {
+			t.Fatalf("ValidateGlobal must not rewrite on_error; the \"allow\" default is applied in internal/ratelimit/valkey, got %q", g.RateLimit.Valkey.OnError)
 		}
 	})
 

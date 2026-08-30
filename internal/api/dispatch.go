@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -55,6 +56,7 @@ func (s *Server) dispatchShared(ctx context.Context, formID string, cf *app.Comp
 	for _, id := range channelIDs {
 		cc, ok := cf.Channels[id]
 		if !ok {
+			ch <- audit.ChannelResult{ID: id, Success: false, Error: "channel not found or disabled"}
 			continue
 		}
 		wg.Add(1)
@@ -85,12 +87,17 @@ func buildMessage(cc *app.CompiledChannel, data render.SubmissionData) notify.Re
 			}
 		}
 	}
-	for key, tmpl := range cc.Templates {
-		rendered, err := tmpl.Execute(data)
+	keys := make([]string, 0, len(cc.Templates))
+	for key := range cc.Templates {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		rendered, err := cc.Templates[key].Execute(data)
 		if err != nil {
 			msg.Body = nil
 			msg.Meta["render_error"] = err.Error()
-			continue
+			break
 		}
 		switch key {
 		case "subject":

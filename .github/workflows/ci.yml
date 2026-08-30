@@ -65,12 +65,12 @@ jobs:
           cache: true
       - run: go run golang.org/x/tools/cmd/deadcode@latest -test ./cmd/formelay
 
-  valkey-integration:
-    name: Valkey integration tests
+  integration-tests:
+    name: Integration tests (Valkey, Mailpit, webhook mirror)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run integration suite against real Valkey
+      - name: Run integration suite against real Valkey/Mailpit/webhook-mirror
         run: |
           docker compose -f docker-compose.test.yml up --build \
             --abort-on-container-exit --exit-code-from integration-test

@@ -1,12 +1,43 @@
-# Integration test harness: a real Valkey instance plus a throwaway Go
-# container that runs the ratelimit/valkey integration suite against it.
-# Used by `make test-integration` and by CI; not part of the normal
-# docker-compose.yml deployment stack.
+# Integration test harness: real Valkey, Mailpit (SMTP), and a small custom
+# webhook/Discord recorder, plus a throwaway Go container that runs the
+# integration-tagged suites against all three. Used by `make test-integration`
+# and by CI; not part of the normal docker-compose.yml deployment stack.
 services:
   valkey:
     image: valkey/valkey:8
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Real SMTP receiver for internal/notify/email and internal/api's
+  # integration suites, so email delivery is verified against an actual
+  # wire-protocol conversation, not just client-side assertions. Exposes a
+  # JSON API (see https://mailpit.axllent.org/docs/api-cli/) for fetching
+  # received messages.
+  mailpit:
+    image: axllent/mailpit
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8025/readyz"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Real HTTP receiver standing in for both the webhook and discord channel
+  # types (mechanically identical from the receiving end: both just POST
+  # JSON to a URL). See cmd/webhookmirror.
+  webhook-mirror:
+    image: golang:1.27-bookworm
+    working_dir: /src
+    volumes:
+      - .:/src
+      - gomod-cache:/go/pkg/mod
+    environment:
+      - GOFLAGS=-mod=mod
+    command: ["go", "run", "./cmd/webhookmirror"]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/localhost/8090"]
       interval: 2s
       timeout: 2s
       retries: 15
@@ -19,12 +50,26 @@ services:
       - gomod-cache:/go/pkg/mod
     environment:
       - VALKEY_TEST_ADDR=valkey:6379
+      - SMTP_TEST_HOST=mailpit
+      - SMTP_TEST_PORT=1025
+      - SMTP_TEST_API=http://mailpit:8025
+      - WEBHOOK_MIRROR_URL=http://webhook-mirror:8090
       - CGO_ENABLED=0
       - GOFLAGS=-mod=mod
     depends_on:
       valkey:
         condition: service_healthy
-    command: ["go", "test", "-tags=integration", "-count=1", "-v", "./internal/ratelimit/valkey/..."]
+      mailpit:
+        condition: service_healthy
+      webhook-mirror:
+        condition: service_healthy
+    command:
+      [
+        "go", "test", "-tags=integration", "-count=1", "-v",
+        "./internal/ratelimit/valkey/...",
+        "./internal/notify/email/...",
+        "./internal/api/...",
+      ]
 
 volumes:
   gomod-cache:

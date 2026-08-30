@@ -97,6 +97,12 @@ func ValidateForm(f *FormConfig) error {
 		if err := validateSpamAction("on_error", f.SpamFilter.OnError, f.ID); err != nil {
 			return err
 		}
+		if f.SpamFilter.OnSpam == SpamActionRoute && f.SpamFilter.Route.SpamTemplate == "" {
+			return fmt.Errorf("form %q: spam_filter.route.spam_template is required when on_spam is 'route'", f.ID)
+		}
+		if f.SpamFilter.OnError == SpamActionRoute && f.SpamFilter.Route.ErrorTemplate == "" && f.SpamFilter.Route.SpamTemplate == "" {
+			return fmt.Errorf("form %q: spam_filter.route.error_template (or spam_template as a fallback) is required when on_error is 'route'", f.ID)
+		}
 		for _, id := range f.SpamFilter.Route.SpamChannels {
 			if !channelIDs[id] {
 				return fmt.Errorf("form %q: spam_filter.route.spam_channels references unknown channel id %q", f.ID, id)
