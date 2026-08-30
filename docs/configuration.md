@@ -108,7 +108,7 @@ Inherited by any `email` channel that doesn't override the same field itself.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `site_key` | string | — | Required. A **public** capability token — generate with `formelay keygen`. Not a secret; see [Security model](../README.md#security-model). |
+| `site_key` | string | — | Required. A **public** capability token — generate with `formelay keygen`. Not a secret against a targeted attacker, but required to submit at all; see [Security model](../README.md#security-model). |
 | `transport` | `header` \| `form_field` | `header` | Where the submitted key is read from. `header` avoids leaking the key via `Referer`; use `form_field` only for a plain `<form>` with no JavaScript. |
 | `header_name` | string | `X-Formelay-Site-Key` | Header name, when `transport: header`. |
 | `form_field_name` | string | — | Required when `transport: form_field`; the form field name carrying the key. |

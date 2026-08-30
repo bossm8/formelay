@@ -108,7 +108,7 @@ Prometheus metrics are served on the internal listener (`9090` by default), neve
 
 Read this before deploying anything that will see real traffic.
 
-- **The per-form site key is public**, by design. Anything shipped to a browser can be read by anyone who opens dev tools. It scopes and can be revoked/rotated independently of origin config, but it is not a confidentiality boundary.
+- **The per-form site key is public**, by design. Anything shipped to a browser can be read by anyone who opens dev tools on that specific site. It is not a confidentiality boundary against someone who specifically targets your form — but a submission can't succeed without first finding the key on your page, so it does stop the bulk of blind, scripted traffic (scanners and copy-pasted `curl` payloads that never loaded your site at all). It also scopes and can be revoked/rotated independently of origin config.
 - **Origin allowlisting** stops casual cross-site reuse but not a scripted request with a forged `Origin` header.
 - **Rate limiting** bounds damage from a known or leaked site key.
 - **CAPTCHA** is the layer that actually resists a scripted, non-browser attacker. Enable it for any form likely to attract abuse.
