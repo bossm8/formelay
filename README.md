@@ -105,7 +105,7 @@ Read this before deploying anything that will see real traffic.
 - **Origin allowlisting** stops casual cross-site reuse but not a scripted request with a forged `Origin` header.
 - **Rate limiting** bounds damage from a known or leaked site key.
 - **CAPTCHA** is the layer that actually resists a scripted, non-browser attacker. Enable it for any form likely to attract abuse.
-- **The AI spam classifier** is a soft content signal, never a security boundary on its own, and ships with a prompt designed to treat prompt-injection attempts in submitted content as spam evidence rather than a bypass.
+- **The AI spam classifier** is a soft content signal, never a security boundary on its own, and ships with a prompt designed to treat prompt-injection attempts in submitted content as spam evidence rather than a bypass. Which fields it even sees is configurable (`spam_filter.include_fields`), so PII fields (`email`, `phone`, ...) never need to reach the third-party provider at all.
 - Submitted field values are sanitized (real markup stripped via `bluemonday`, invalid UTF-8 rejected, control characters removed, Unicode NFC-normalized via `golang.org/x/text`) and then only ever reach templates as escaped data (`html/template` auto-escaping, an explicit `json` template function for non-HTML targets). They're never re-interpreted as markup, a template source, or a raw HTTP header.
 - File uploads are rejected outright. This is a text-field relay, not a file-upload service.
 

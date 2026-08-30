@@ -26,18 +26,23 @@ captcha:
   on_error: fail_closed
 
 spam_filter:
-  enabled: false   # set true once SPAM_FILTER_API_KEY is real
+  enabled: true   # set true once SPAM_FILTER_API_KEY is real
   provider:
     type: ai
-    api_base: "https://api.openai.com/v1"
+    api_base: "http://host.docker.internal:8999/v1"
     api_key_env: "SPAM_FILTER_API_KEY"
     model: "gpt-4o-mini"
     timeout: 5s
   # Uses the built-in, injection-hardened default prompt (no
   # system_template/user_template override needed for this example).
+  #
+  # Only the fields actually useful for judging spam go to the AI provider;
+  # name/email (PII) never leave this server. Delivery to channels below is
+  # unaffected, it still gets every submitted field as usual.
+  include_fields: ["subject", "message"]
   on_spam: deliver_tagged   # unlike contact.yaml's `route`, just tag and
-                             # deliver normally — {{ .Meta.SpamSuspected }}
-                             # is available in support-email-body.tmpl.
+                            # deliver normally, {{ .Meta.SpamSuspected }}
+                            # is available in support-email-body.tmpl.
   on_error: deliver
 
 rate_limit:

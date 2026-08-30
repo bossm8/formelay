@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,8 +20,10 @@ import (
 	"github.com/bossm8/formelay/internal/captcha"
 	"github.com/bossm8/formelay/internal/metrics"
 	"github.com/bossm8/formelay/internal/notify"
+	"github.com/bossm8/formelay/internal/notify/discord"
 	"github.com/bossm8/formelay/internal/notify/webhook"
 	"github.com/bossm8/formelay/internal/ratelimit"
+	"github.com/bossm8/formelay/internal/render"
 	"github.com/bossm8/formelay/internal/spamfilter"
 )
 
@@ -194,6 +198,155 @@ func TestSubmit_RateLimited(t *testing.T) {
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d: %s", rec.Code, rec.Body.String())
 	}
+}
+
+// fakeClassifierRecorder captures the SubmissionData a fakeClassifier was
+// called with, so a test can assert exactly what the "AI provider" saw.
+type fakeClassifierRecorder struct {
+	mu       sync.Mutex
+	called   bool
+	received render.SubmissionData
+}
+
+func (r *fakeClassifierRecorder) recordAndPass(data render.SubmissionData) spamfilter.Verdict {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.called = true
+	r.received = data
+	return spamfilter.Verdict{IsSpam: false}
+}
+
+type fakeClassifier struct{ rec *fakeClassifierRecorder }
+
+func (f *fakeClassifier) Type() string { return "fake" }
+func (f *fakeClassifier) Classify(_ context.Context, data render.SubmissionData) (spamfilter.Verdict, error) {
+	return f.rec.recordAndPass(data), nil
+}
+
+// TestSubmit_SpamFilterIncludeFields proves spam_filter.include_fields is
+// scoped to exactly the AI classifier call, and nothing else: the fake
+// classifier standing in for the AI provider must see only the allowlisted
+// field, while the actual delivered webhook payload (a real httptest
+// server, not the unreachable placeholder baseForm uses) must still
+// contain every submitted field, proving delivery is unaffected.
+func TestSubmit_SpamFilterIncludeFields(t *testing.T) {
+	var deliveredBody []byte
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deliveredBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookSrv.Close()
+
+	rec := &fakeClassifierRecorder{}
+
+	// discord.Config.Validate() doesn't require https (unlike the webhook
+	// channel), so it's the one built-in channel that can point at a plain
+	// httptest.NewServer without also needing a TLS test server.
+	os.Setenv("TEST_DISCORD_WEBHOOK", webhookSrv.URL)
+	t.Cleanup(func() { os.Unsetenv("TEST_DISCORD_WEBHOOK") })
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.yaml"), `
+server:
+  listen_addr: "127.0.0.1:0"
+forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+templates_dir: "`+filepath.Join(dir, "templates")+`"
+security:
+  max_body_bytes: 65536
+rate_limit:
+  backend: memory
+  default:
+    per_ip: {rate: 100, window: 1m, burst: 100}
+    per_form: {rate: 100, window: 1m, burst: 100}
+    global: {rate: 1000, window: 1m, burst: 1000}
+`)
+	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+id: contact
+allowed_origins: ["https://example.com"]
+auth:
+  site_key: "the-key"
+fields:
+  required: ["name", "email", "message"]
+spam_filter:
+  enabled: true
+  provider:
+    type: fake
+  include_fields: ["message"]
+  on_spam: deliver
+  on_error: deliver
+channels:
+  - id: discord-alerts
+    type: discord
+    config:
+      webhook_url_env: "TEST_DISCORD_WEBHOOK"
+      template: "body.tmpl"
+`)
+	writeFile(t, filepath.Join(dir, "templates", "body.tmpl"),
+		`{"name": {{ .Fields.name | json }}, "email": {{ .Fields.email | json }}, "message": {{ .Fields.message | json }}}`)
+
+	registries := app.Registries{
+		Notify:     notify.NewRegistry(),
+		Captcha:    captcha.NewRegistry(),
+		SpamFilter: spamfilter.NewRegistry(),
+	}
+	registries.Notify.Register(discord.Type, discord.New)
+	registries.SpamFilter.Register("fake", func(map[string]any, spamfilter.PromptSource) (spamfilter.Classifier, error) {
+		return &fakeClassifier{rec: rec}, nil
+	})
+
+	a := app.New(filepath.Join(dir, "config.yaml"), registries)
+	if err := a.Reload(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	s := &Server{
+		App:         a,
+		RateLimiter: &fakeRateLimiter{},
+		Audit:       audit.New(log),
+		Metrics:     metrics.New("test", "test", "test"),
+		IDGen:       func() string { return "test-request-id" },
+	}
+
+	form := url.Values{"name": {"Alice"}, "email": {"alice@example.com"}, "message": {"Hello there"}}
+	rec2 := doSubmit(t, s, "contact", form, map[string]string{"X-Formelay-Site-Key": "the-key"})
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+
+	// 1. The fake classifier (standing in for the AI provider) must have
+	// seen only the allowlisted field.
+	rec.mu.Lock()
+	called, classified := rec.called, rec.received
+	rec.mu.Unlock()
+	if !called {
+		t.Fatalf("expected the classifier to have been called")
+	}
+	if want := map[string]string{"message": "Hello there"}; !equalStringMaps(classified.Fields, want) {
+		t.Fatalf("classifier saw Fields = %v, want %v (PII must not reach the AI call)", classified.Fields, want)
+	}
+
+	// 2. The actually-delivered webhook payload must still contain every
+	// field: include_fields must not affect delivery.
+	var delivered map[string]string
+	if err := json.Unmarshal(deliveredBody, &delivered); err != nil {
+		t.Fatalf("decode delivered webhook body: %v (body: %s)", err, deliveredBody)
+	}
+	want := map[string]string{"name": "Alice", "email": "alice@example.com", "message": "Hello there"}
+	if !equalStringMaps(delivered, want) {
+		t.Fatalf("delivered payload = %v, want %v (delivery must not be filtered by include_fields)", delivered, want)
+	}
+}
+
+func equalStringMaps(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 var _ ratelimit.Store = (*fakeRateLimiter)(nil)

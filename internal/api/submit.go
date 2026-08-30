@@ -154,8 +154,12 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	var routeChannelIDs []string
 
 	if fc.SpamFilter.Enabled && cf.SpamClassifier != nil {
+		// A filtered *copy* for the classifier only: data itself (used
+		// below for delivery and the human-facing spam-review template)
+		// must keep every field regardless of include_fields.
+		classifyData := data.WithFieldsLimitedTo(fc.SpamFilter.IncludeFields)
 		sfStart := time.Now()
-		verdict, cerr := cf.SpamClassifier.Classify(ctx, data)
+		verdict, cerr := cf.SpamClassifier.Classify(ctx, classifyData)
 		s.Metrics.SpamFilterLatencySeconds.WithLabelValues(formID).Observe(time.Since(sfStart).Seconds())
 
 		var trigger string

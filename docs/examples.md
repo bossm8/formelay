@@ -84,7 +84,7 @@ document.getElementById("newsletter").addEventListener("submit", async (e) => {
 
 ## 3. Support request — CAPTCHA + AI spam filtering
 
-The fullest example: a required `subject` field alongside the usual name/email/message, both extra spam-defense layers present (disabled by default — see below), and `deliver_tagged` rather than `route` for the spam verdict, so a suspected-spam ticket still reaches support but visibly flagged, instead of being pulled out to a separate review channel.
+The fullest example: a required `subject` field alongside the usual name/email/message, both extra spam-defense layers present (disabled by default, see below), and `deliver_tagged` rather than `route` for the spam verdict, so a suspected-spam ticket still reaches support but visibly flagged, instead of being pulled out to a separate review channel. `spam_filter.include_fields: ["subject", "message"]` also means `name`/`email` never reach the AI provider at all, only the free-text fields relevant to judging spam do; delivery to email/Discord below still gets every field as usual.
 
 **Config**: [`config.example/forms.d/support.yaml`](../config.example/forms.d/support.yaml)
 **Templates**: [`support-email-subject.tmpl`](../config.example/templates/support-email-subject.tmpl), [`support-email-body.tmpl`](../config.example/templates/support-email-body.tmpl), [`support-discord.tmpl`](../config.example/templates/support-discord.tmpl)
