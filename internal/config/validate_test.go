@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestValidateForm(t *testing.T) {
 	base := func() *FormConfig {
@@ -96,6 +100,43 @@ func TestValidateGlobal(t *testing.T) {
 		g.RateLimit.Backend = "sqlite"
 		if err := ValidateGlobal(g); err == nil {
 			t.Fatal("expected error for unknown backend")
+		}
+	})
+
+	t.Run("tls enabled requires cert and key paths", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.Server.TLS.Enabled = true
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for missing cert_file/key_file")
+		}
+	})
+
+	t.Run("tls enabled requires the cert and key files to actually exist", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.Server.TLS.Enabled = true
+		g.Server.TLS.CertFile = "/nonexistent/cert.pem"
+		g.Server.TLS.KeyFile = "/nonexistent/key.pem"
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for nonexistent cert/key files")
+		}
+	})
+
+	t.Run("tls with real files passes", func(t *testing.T) {
+		dir := t.TempDir()
+		cert := filepath.Join(dir, "cert.pem")
+		key := filepath.Join(dir, "key.pem")
+		if err := os.WriteFile(cert, []byte("dummy"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(key, []byte("dummy"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		g := DefaultGlobalConfig()
+		g.Server.TLS.Enabled = true
+		g.Server.TLS.CertFile = cert
+		g.Server.TLS.KeyFile = key
+		if err := ValidateGlobal(g); err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 }

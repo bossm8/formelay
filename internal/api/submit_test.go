@@ -218,7 +218,6 @@ func (r *fakeClassifierRecorder) recordAndPass(data render.SubmissionData) spamf
 
 type fakeClassifier struct{ rec *fakeClassifierRecorder }
 
-func (f *fakeClassifier) Type() string { return "fake" }
 func (f *fakeClassifier) Classify(_ context.Context, data render.SubmissionData) (spamfilter.Verdict, error) {
 	return f.rec.recordAndPass(data), nil
 }

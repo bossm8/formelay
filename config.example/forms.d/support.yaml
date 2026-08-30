@@ -26,10 +26,10 @@ captcha:
   on_error: fail_closed
 
 spam_filter:
-  enabled: true   # set true once SPAM_FILTER_API_KEY is real
+  enabled: false   # set true once SPAM_FILTER_API_KEY is real
   provider:
     type: ai
-    api_base: "http://host.docker.internal:8999/v1"
+    api_base: "https://api.openai.com/v1"
     api_key_env: "SPAM_FILTER_API_KEY"
     model: "gpt-4o-mini"
     timeout: 5s

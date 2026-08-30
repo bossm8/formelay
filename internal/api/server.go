@@ -23,12 +23,22 @@ type Server struct {
 
 // NewMux builds the public-facing mux: the submission endpoint only.
 // Liveness/readiness deliberately live on the internal listener alongside
-// /metrics (see NewInternalMux), not on the public port.
-func (s *Server) NewMux() *http.ServeMux {
+// /metrics (see NewInternalMux), not on the public port. Wrapped with an
+// in-flight-request gauge, since this is the attacker-facing surface the
+// metric exists to watch — the internal listener isn't instrumented.
+func (s *Server) NewMux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /f/{formID}/submit", s.handleSubmit)
 	mux.HandleFunc("OPTIONS /f/{formID}/submit", s.handlePreflight)
-	return mux
+	return s.withInFlightGauge(mux)
+}
+
+func (s *Server) withInFlightGauge(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.Metrics.HTTPRequestsInFlight.Inc()
+		defer s.Metrics.HTTPRequestsInFlight.Dec()
+		next.ServeHTTP(w, r)
+	})
 }
 
 // NewInternalMux builds the internal-only mux: liveness/readiness. The

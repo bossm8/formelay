@@ -13,7 +13,7 @@ Working examples of everything below live in [`config.example/`](../config.examp
 | `listen_addr` | string | `0.0.0.0:8080` | Public submission API listener. |
 | `read_timeout`, `write_timeout`, `idle_timeout`, `read_header_timeout` | duration | `read_header_timeout` falls back to `5s` if unset; others `0` (no timeout) | Standard `net/http.Server` timeouts. |
 | `shutdown_grace_period` | duration | `15s` | How long graceful shutdown waits for in-flight requests. |
-| `tls.enabled`, `tls.cert_file`, `tls.key_file` | bool, string, string | — | Reserved for direct TLS termination; most deployments terminate TLS in front of formelay instead. |
+| `tls.enabled`, `tls.cert_file`, `tls.key_file` | bool, string, string | — | If enabled, the public submission listener terminates TLS itself (`cert_file`/`key_file` are required and must exist, checked at config load). Most deployments instead put a reverse proxy in front and leave this off; it's here for the simple case of no proxy in front at all. Only the public listener is affected, the internal health/metrics listener always stays plain HTTP. |
 | `trusted_proxies` | []string | `[]` | CIDRs (or bare IPs, treated as `/32`/`/128`) allowed to set `X-Forwarded-For`. Only trust your actual reverse proxy's address here. |
 
 ### `forms_dir`, `templates_dir`
@@ -24,7 +24,6 @@ Paths (strings) to the per-form YAML directory and the directory template `path:
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `default_allowed_origins` | []string | `[]` | Reserved for a future global origin allowlist; currently every form sets its own `allowed_origins`. |
 | `max_body_bytes` | int | `262144` (256 KiB) | Hard cap on a submission's body size. |
 
 ### `rate_limit`
@@ -66,11 +65,10 @@ Inherited by any `email` channel that doesn't override the same field itself.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `level` | string | `info` | Reserved for future use; the current build logs at `info`. |
-| `format` | string | `json` | Log output format. |
-| `audit.enabled` | bool | `true` | Whether the structured per-submission audit record is emitted. |
-| `audit.format` | string | `json` | Reserved for future use. |
-| `audit.log_field_values` | bool | `false` | If true, audit records include submitted field *values* (PII), not just metadata. Off by default deliberately — see [Security model](../README.md#security-model). |
+| `level` | `debug` \| `info` \| `warn` \| `error` | `info` | Minimum level for the general application log (not the audit log, which always emits regardless of this). Applied once at startup; a later config reload does not change it live, restart to pick up a change. |
+| `format` | `json` \| `text` | `json` | Output format for the general application log. |
+| `audit.enabled` | bool | `true` | Whether the structured per-submission audit record is emitted at all. |
+| `audit.log_field_values` | bool | `false` | If true, audit records include submitted field *values* (PII), not just metadata. Off by default deliberately — see [Security model](../README.md#security-model). The audit log itself is always JSON regardless of `format` above, that's the point (machine-parseable), so there's no separate `audit.format`. |
 
 ### `reload`
 

@@ -5,13 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/mail"
 	"os"
 
 	gomail "github.com/wneessen/go-mail"
 
 	"github.com/bossm8/formelay/internal/notify"
 	"github.com/bossm8/formelay/internal/render"
+	"github.com/bossm8/formelay/internal/sanitize"
 	"github.com/bossm8/formelay/internal/yamlutil"
 )
 
@@ -88,6 +88,9 @@ func New(raw map[string]any, defaults notify.GlobalDefaults) (notify.Notifier, e
 
 func (e *emailNotifier) Type() string { return Type }
 
+// ReplyToField implements notify.ReplyToFieldProvider.
+func (e *emailNotifier) ReplyToField() string { return e.cfg.ReplyToField }
+
 func (e *emailNotifier) TemplateRefs() []notify.TemplateRef {
 	bodyKind := render.KindText
 	bodyContentType := "text/plain"
@@ -110,10 +113,11 @@ func (e *emailNotifier) Send(ctx context.Context, msg notify.RenderedMessage) er
 		return fmt.Errorf("email: invalid To address: %w", err)
 	}
 	if replyTo, ok := msg.Meta["reply_to"]; ok && replyTo != "" {
-		if _, err := mail.ParseAddress(replyTo); err != nil {
+		addr, err := sanitize.HeaderSafeAddress(replyTo)
+		if err != nil {
 			return fmt.Errorf("email: rejecting reply-to header from submitted content: %w", err)
 		}
-		if err := m.ReplyTo(replyTo); err != nil {
+		if err := m.ReplyTo(addr); err != nil {
 			return fmt.Errorf("email: setting reply-to: %w", err)
 		}
 	}

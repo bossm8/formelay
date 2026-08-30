@@ -66,6 +66,12 @@ type Config struct {
 	DialTimeout time.Duration
 	KeyPrefix   string
 	OnError     OnError
+	// OnBackendError, if set, is called every time a Do() call against
+	// Valkey itself fails (the ratelimit.Store.Allow contract never
+	// surfaces this as an error to its caller, since a backend outage is
+	// resolved internally via OnError, so this is the only hook available
+	// for observing it, e.g. to increment a metric).
+	OnBackendError func()
 }
 
 // Store implements ratelimit.Store against Valkey.
@@ -123,14 +129,23 @@ func (s *Store) Allow(ctx context.Context, key string, rate, burst float64, wind
 	resp := s.client.Do(ctx, cmd)
 	allowed, err := resp.ToInt64()
 	if err != nil {
-		return s.onErrorAllows(), nil
+		return s.handleBackendError(), nil
 	}
 	return allowed == 1, nil
 }
 
-// onErrorAllows resolves the OnError setting to a boolean, isolated as its
-// own method so the on_error decision (allow vs. deny on a Do() failure) is
-// unit-testable without a live or fake valkey.Client — see valkey_test.go.
+// handleBackendError reports a Do() failure (via OnBackendError, if set)
+// and resolves it to an allow/deny decision per OnError. Split out from
+// Allow so both halves are unit-testable without a live or fake
+// valkey.Client — see valkey_test.go.
+func (s *Store) handleBackendError() bool {
+	if s.cfg.OnBackendError != nil {
+		s.cfg.OnBackendError()
+	}
+	return s.onErrorAllows()
+}
+
+// onErrorAllows resolves the OnError setting to a boolean.
 func (s *Store) onErrorAllows() bool {
 	return s.onError != OnErrorDeny
 }

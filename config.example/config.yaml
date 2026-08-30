@@ -43,7 +43,6 @@ logging:
   format: "json"
   audit:
     enabled: true
-    format: "json"
     log_field_values: false
 
 reload:

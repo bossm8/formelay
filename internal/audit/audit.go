@@ -27,7 +27,7 @@ type Event struct {
 	SpamAction  string // "", deliver, deliver_tagged, drop, route
 	Channels    []ChannelResult
 	Latency     time.Duration
-	FieldValues map[string]string // only populated when the form opts in via audit.log_field_values
+	FieldValues map[string]string // only included if the caller passes logFieldValues=true to Log
 }
 
 // Logger emits Events as structured slog records.
@@ -39,7 +39,22 @@ func New(log *slog.Logger) *Logger {
 	return &Logger{log: log}
 }
 
-func (l *Logger) Log(e Event) {
+// Log emits e, unless enabled is false (logging.audit.enabled), in which
+// case it's a no-op. logFieldValues (logging.audit.log_field_values)
+// decides whether e.FieldValues is actually included in the output; the
+// caller always passes whatever it has on FieldValues regardless, so the
+// privacy decision lives entirely here, not scattered across call sites.
+//
+// Both flags are parameters, not constructor-time state deliberately: this
+// codebase always reads config fresh from the current snapshot on every
+// request (see api.Server.handleSubmit's rt := s.App.Current()), so
+// logging.audit.* changes take effect on the very next request after a hot
+// reload, the same as every other per-form/global setting, rather than
+// only at process startup.
+func (l *Logger) Log(e Event, enabled, logFieldValues bool) {
+	if !enabled {
+		return
+	}
 	attrs := []any{
 		"request_id", e.RequestID,
 		"form_id", e.FormID,
@@ -60,7 +75,7 @@ func (l *Logger) Log(e Event) {
 		}
 		attrs = append(attrs, "channels", channels)
 	}
-	if len(e.FieldValues) > 0 {
+	if logFieldValues && len(e.FieldValues) > 0 {
 		attrs = append(attrs, "fields", e.FieldValues)
 	}
 	l.log.Info("submission", attrs...)

@@ -22,7 +22,7 @@ func (s *Server) dispatchNormal(ctx context.Context, formID string, channels map
 		wg.Add(1)
 		go func(id string, cc *app.CompiledChannel) {
 			defer wg.Done()
-			ch <- s.sendOne(ctx, formID, id, cc, buildMessage(formID, id, cc, data))
+			ch <- s.sendOne(ctx, formID, id, cc, buildMessage(cc, data))
 		}(id, cc)
 	}
 	wg.Wait()
@@ -61,7 +61,6 @@ func (s *Server) dispatchShared(ctx context.Context, formID string, cf *app.Comp
 		go func(id string, cc *app.CompiledChannel) {
 			defer wg.Done()
 			msg := notify.RenderedMessage{
-				FormID: formID, ChannelID: id,
 				Subject: "[Spam review] " + cf.Config.DisplayName,
 				Body:    body, ContentType: "application/json",
 			}
@@ -77,16 +76,14 @@ func (s *Server) dispatchShared(ctx context.Context, formID string, cf *app.Comp
 	return results
 }
 
-func buildMessage(formID, channelID string, cc *app.CompiledChannel, data render.SubmissionData) notify.RenderedMessage {
-	msg := notify.RenderedMessage{FormID: formID, ChannelID: channelID, Meta: map[string]string{}}
-	if data.Meta.SpamSuspected {
-		msg.Meta["spam_suspected"] = "true"
-	}
-	if data.Meta.SpamReason != "" {
-		msg.Meta["spam_reason"] = data.Meta.SpamReason
-	}
-	if email := data.Fields["email"]; email != "" {
-		msg.Meta["reply_to"] = email
+func buildMessage(cc *app.CompiledChannel, data render.SubmissionData) notify.RenderedMessage {
+	msg := notify.RenderedMessage{Meta: map[string]string{}}
+	if rtp, ok := cc.Notifier.(notify.ReplyToFieldProvider); ok {
+		if field := rtp.ReplyToField(); field != "" {
+			if v := data.Fields[field]; v != "" {
+				msg.Meta["reply_to"] = v
+			}
+		}
 	}
 	for key, tmpl := range cc.Templates {
 		rendered, err := tmpl.Execute(data)

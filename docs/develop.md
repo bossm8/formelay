@@ -27,9 +27,11 @@ Go isn't required on your host; everything runs through Docker.
 make build             # go build ./...
 make vet                # go vet ./...
 make test                 # go test ./...
+make coverage             # go test -coverprofile=coverage.out ./..., prints the total
 make race                  # go test -race ./...
 make tidy                   # go mod tidy
 make vulncheck               # govulncheck ./...
+make deadcode                # whole-program reachability check (incl. tests) via golang.org/x/tools/cmd/deadcode
 make test-integration        # ratelimit/valkey suite against a real Valkey, via docker-compose.test.yml
 make test-live                # captcha suite against the real Turnstile/hCaptcha verify endpoints
 make release-snapshot        # local goreleaser dry run (binaries + Docker images, no publish)
@@ -37,7 +39,7 @@ make release-snapshot        # local goreleaser dry run (binaries + Docker image
 
 A `.devcontainer/` is included if you'd rather develop inside a container directly.
 
-GitHub Actions runs gofmt/vet/build/`-race`-tests/`govulncheck`/the Valkey integration suite/the CAPTCHA live suite on every push and pull request (`.github/workflows/ci.yml`). The live-provider job is `continue-on-error`: a genuine regression still shows up clearly, but a Cloudflare/hCaptcha outage doesn't block an unrelated PR.
+GitHub Actions runs gofmt/vet/build/`-race`-tests (with coverage uploaded to [Codecov](https://codecov.io/gh/bossm8/formelay))/`govulncheck`/`deadcode`/the Valkey integration suite/the CAPTCHA live suite on every push and pull request (`.github/workflows/ci.yml`). The live-provider job is `continue-on-error`: a genuine regression still shows up clearly, but a Cloudflare/hCaptcha outage doesn't block an unrelated PR. `deadcode` blocks the build: unlike the third-party-dependent live suite, an unreachable-code finding is a real regression in our own code.
 
 ## Testing approach
 

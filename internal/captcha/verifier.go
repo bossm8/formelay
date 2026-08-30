@@ -13,7 +13,6 @@ import (
 // Verifier checks a CAPTCHA response token server-side.
 type Verifier interface {
 	Verify(ctx context.Context, responseToken, remoteIP string) (bool, error)
-	Type() string
 }
 
 type NewVerifierFunc func(raw map[string]any) (Verifier, error)

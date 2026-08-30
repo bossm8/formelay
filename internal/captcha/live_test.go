@@ -110,9 +110,6 @@ func TestLiveGenericProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build verifier: %v", err)
 	}
-	if v.Type() != "generic" {
-		t.Fatalf("expected Type() = %q, got %q", "generic", v.Type())
-	}
 	ok, err := v.Verify(context.Background(), turnstileTestResponse, "203.0.113.1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

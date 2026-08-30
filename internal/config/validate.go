@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 )
 
 // ValidateGlobal performs structural validation of the global config.
@@ -23,6 +24,17 @@ func ValidateGlobal(g *GlobalConfig) error {
 	}
 	if g.FormsDir == "" {
 		return fmt.Errorf("forms_dir is required")
+	}
+	if g.Server.TLS.Enabled {
+		if g.Server.TLS.CertFile == "" || g.Server.TLS.KeyFile == "" {
+			return fmt.Errorf("server.tls.cert_file and server.tls.key_file are required when server.tls.enabled is true")
+		}
+		if _, err := os.Stat(g.Server.TLS.CertFile); err != nil {
+			return fmt.Errorf("server.tls.cert_file: %w", err)
+		}
+		if _, err := os.Stat(g.Server.TLS.KeyFile); err != nil {
+			return fmt.Errorf("server.tls.key_file: %w", err)
+		}
 	}
 	return nil
 }

@@ -21,7 +21,6 @@ type Verdict struct {
 // form's `on_error` action, independently of `on_spam` for IsSpam=true.
 type Classifier interface {
 	Classify(ctx context.Context, data render.SubmissionData) (Verdict, error)
-	Type() string
 }
 
 // PromptSource carries already-resolved (file-read or inline) prompt

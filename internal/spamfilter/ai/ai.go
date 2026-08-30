@@ -103,8 +103,6 @@ func New(raw map[string]any, prompts spamfilter.PromptSource) (spamfilter.Classi
 	}, nil
 }
 
-func (c *classifier) Type() string { return Type }
-
 type chatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`

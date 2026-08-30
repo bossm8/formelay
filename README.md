@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/bossm8/formelay/actions/workflows/ci.yml"><img src="https://github.com/bossm8/formelay/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://codecov.io/gh/bossm8/formelay"><img src="https://codecov.io/gh/bossm8/formelay/graph/badge.svg" alt="Coverage"></a>
   <a href="https://github.com/bossm8/formelay/releases/latest"><img src="https://img.shields.io/github/v/release/bossm8/formelay?sort=semver" alt="Latest release"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/bossm8/formelay" alt="Go version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/bossm8/formelay" alt="License"></a>
@@ -97,6 +98,10 @@ Each form config controls, independently:
 - `fields`: required fields and lightweight validators (`email`, `url`, `notblank`)
 - `channels`: one or more delivery targets, each with its own template
 
+## Metrics
+
+Prometheus metrics are served on the internal listener (`9090` by default), never on the public port. Every metric — submissions, deliveries, rate limiting, CAPTCHA/spam-filter verdicts, config reloads — is documented with its exact labels and values in **[docs/metrics.md](docs/metrics.md)**.
+
 ## Security model
 
 Read this before deploying anything that will see real traffic.
@@ -137,12 +142,6 @@ docker run -d --name formelay \
   ghcr.io/bossm8/formelay:latest
 ```
 
-Every image carries standard OCI labels (title, description, version, revision, build date, license, source/documentation URLs):
-
-```bash
-docker inspect --format '{{json .Config.Labels}}' ghcr.io/bossm8/formelay:latest
-```
-
 ### Running the prebuilt binary
 
 ```bash
@@ -151,8 +150,8 @@ curl -LO https://github.com/bossm8/formelay/releases/download/v0.1.0/checksums.t
 sha256sum -c checksums.txt --ignore-missing   # verify before running anything you downloaded
 
 tar -xzf formelay_0.1.0_linux_amd64.tar.gz
+./formelay keygen                             # generate a form's public site key
 ./formelay --config /path/to/config.yaml      # metrics/health on :9090, submissions on :8080 by default
-./formelay keygen                              # generate a form's public site key
 ```
 
 Replace `v0.1.0`/`0.1.0` and `linux_amd64` with the actual version and your platform (`darwin_arm64`, `linux_arm64`, ...) from the release's asset list.

@@ -2,7 +2,7 @@ GO_IMAGE := golang:1.27-bookworm
 GOMOD_VOLUME := formelay-gomod
 DOCKER_RUN := docker run --rm -v $(CURDIR):/src -w /src -v $(GOMOD_VOLUME):/go/pkg/mod -e CGO_ENABLED=0 -e GOFLAGS=-mod=mod $(GO_IMAGE)
 
-.PHONY: tidy fmt fmt-check build vet test race vulncheck test-integration test-live docker-build compose-up compose-down release-snapshot
+.PHONY: tidy fmt fmt-check build vet test coverage race vulncheck deadcode test-integration test-live docker-build compose-up compose-down release-snapshot
 
 tidy:
 	$(DOCKER_RUN) go mod tidy
@@ -22,11 +22,19 @@ vet:
 test:
 	$(DOCKER_RUN) go test ./...
 
+coverage:
+	$(DOCKER_RUN) sh -c 'go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -1'
+
 race:
 	docker run --rm -v $(CURDIR):/src -w /src -v $(GOMOD_VOLUME):/go/pkg/mod -e CGO_ENABLED=1 -e GOFLAGS=-mod=mod $(GO_IMAGE) go test -race ./...
 
 vulncheck:
 	$(DOCKER_RUN) sh -c 'go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...'
+
+# Whole-program reachability analysis from the real cmd/formelay entrypoint,
+# including test-only reachability (-test).
+deadcode:
+	$(DOCKER_RUN) go run golang.org/x/tools/cmd/deadcode@latest -test ./cmd/formelay
 
 # Full Valkey integration suite, run against a real Valkey instance via
 # docker-compose (see docker-compose.test.yml) — no local Valkey needed.

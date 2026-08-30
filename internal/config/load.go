@@ -86,7 +86,7 @@ func DefaultGlobalConfig() *GlobalConfig {
 		Logging: LoggingConfig{
 			Level:  "info",
 			Format: "json",
-			Audit:  AuditConfig{Enabled: true, Format: "json"},
+			Audit:  AuditConfig{Enabled: true},
 		},
 		Reload: ReloadConfig{WatchFiles: true, HandleSIGHUP: true},
 		Metrics: MetricsConfig{

@@ -39,8 +39,7 @@ type ServerConfig struct {
 }
 
 type SecurityConfig struct {
-	DefaultAllowedOrigins []string `yaml:"default_allowed_origins"`
-	MaxBodyBytes          int64    `yaml:"max_body_bytes"`
+	MaxBodyBytes int64 `yaml:"max_body_bytes"`
 }
 
 type RateRule struct {
@@ -82,10 +81,12 @@ type SMTPDefaultsConfig struct {
 	Timeout     yamlutil.Duration `yaml:"timeout"`
 }
 
+// AuditConfig has no separate Format field: the audit log is always
+// structured JSON (that's the point, machine-parseable) regardless of
+// LoggingConfig.Format, which only affects the general application log.
 type AuditConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	Format         string `yaml:"format"`
-	LogFieldValues bool   `yaml:"log_field_values"`
+	Enabled        bool `yaml:"enabled"`
+	LogFieldValues bool `yaml:"log_field_values"`
 }
 
 type LoggingConfig struct {

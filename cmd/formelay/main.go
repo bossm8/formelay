@@ -9,11 +9,13 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -101,16 +103,45 @@ func runServe(args []string) {
 	registries.Captcha.Register("generic", captcha.NewFactory(""))
 	registries.SpamFilter.Register(ai.Type, ai.New)
 
+	// Built before the initial config load (it has no config dependency),
+	// so reloadFn below can record that first load too, not just later ones.
+	m := metrics.New(version.Version, version.Commit, runtime.Version())
+
 	a := app.New(*configPath, registries)
-	if err := a.Reload(); err != nil {
+	// Wraps every reload (this initial one, and every later one triggered
+	// by the file watcher or SIGHUP below) so formelay_config_reload_total
+	// and formelay_config_last_reload_timestamp_seconds reflect all of them,
+	// not just a subset.
+	reloadFn := func() error {
+		err := a.Reload()
+		status := "success"
+		if err != nil {
+			status = "failure"
+		} else {
+			m.ConfigLastReloadTimestamp.Set(float64(time.Now().Unix()))
+		}
+		m.ConfigReloadTotal.WithLabelValues(status).Inc()
+		return err
+	}
+	if err := reloadFn(); err != nil {
 		log.Error("initial config load failed", "error", err)
 		os.Exit(1)
 	}
 	rt := a.Current()
 	global := rt.Config.Global
 
-	m := metrics.New(version.Version, version.Commit, runtime.Version())
-	auditLogger := audit.New(log)
+	// Rebuild the logger per logging.level/logging.format now that config
+	// is loaded (the bootstrap logger above exists only so config-load
+	// errors themselves have somewhere to go). Not hot-reloaded: a later
+	// config change to logging.* takes effect on the next restart, not live.
+	log = buildLogger(global.Logging, os.Stdout)
+	slog.SetDefault(log)
+
+	// The audit log is always JSON, independent of logging.format, so it
+	// gets its own logger rather than reusing the (possibly text-formatted)
+	// application logger above.
+	auditLog := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	auditLogger := audit.New(auditLog)
 
 	rl, closeRL, err := buildRateLimiter(global.RateLimit, m)
 	if err != nil {
@@ -136,12 +167,18 @@ func runServe(args []string) {
 	defer stop()
 
 	if global.Reload.WatchFiles {
-		if err := reload.WatchFiles(ctx, log, *configPath, global.FormsDir, 200*time.Millisecond, a.Reload); err != nil {
+		if err := reload.WatchFiles(ctx, log, *configPath, global.FormsDir, 200*time.Millisecond, reloadFn); err != nil {
 			log.Error("failed to start config watcher", "error", err)
 		}
 	}
 	if global.Reload.HandleSIGHUP {
-		reload.HandleSIGHUP(ctx, log, a.Reload)
+		reload.HandleSIGHUP(ctx, log, reloadFn)
+	}
+
+	// formelay_ratelimit_buckets_active only applies to the memory backend
+	// (valkey's bucket state lives server-side, not in this process).
+	if memStore, ok := rl.(*memory.Store); ok {
+		go sampleActiveBuckets(ctx, memStore, m)
 	}
 
 	mux := server.NewMux()
@@ -169,8 +206,15 @@ func runServe(args []string) {
 	}()
 
 	go func() {
-		log.Info("formelay listening", "addr", global.Server.ListenAddr, "version", version.Version)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if global.Server.TLS.Enabled {
+			log.Info("formelay listening (TLS)", "addr", global.Server.ListenAddr, "version", version.Version)
+			err = httpServer.ListenAndServeTLS(global.Server.TLS.CertFile, global.Server.TLS.KeyFile)
+		} else {
+			log.Info("formelay listening", "addr", global.Server.ListenAddr, "version", version.Version)
+			err = httpServer.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			log.Error("http server error", "error", err)
 			stop()
 		}
@@ -184,6 +228,34 @@ func runServe(args []string) {
 	_ = internalServer.Shutdown(shutdownCtx)
 }
 
+// buildLogger applies logging.level/logging.format to the general
+// application logger (not the audit logger, which is always JSON
+// regardless, see the audit.New call site above). w is injected so tests
+// can capture output instead of writing to a real stream.
+func buildLogger(cfg config.LoggingConfig, w io.Writer) *slog.Logger {
+	opts := &slog.HandlerOptions{Level: parseLogLevel(cfg.Level)}
+	var handler slog.Handler
+	if strings.EqualFold(cfg.Format, "text") {
+		handler = slog.NewTextHandler(w, opts)
+	} else {
+		handler = slog.NewJSONHandler(w, opts)
+	}
+	return slog.New(handler)
+}
+
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func nonZero(d, def time.Duration) time.Duration {
 	if d <= 0 {
 		return def
@@ -191,16 +263,36 @@ func nonZero(d, def time.Duration) time.Duration {
 	return d
 }
 
+// sampleActiveBuckets periodically snapshots st's per-scope bucket counts
+// into m.RatelimitBucketsActive until ctx is cancelled. A ticker, not a
+// push on every Allow(), since the memory package deliberately has no
+// metrics dependency (see ratelimit.Store's minimal interface).
+func sampleActiveBuckets(ctx context.Context, st *memory.Store, m *metrics.Metrics) {
+	t := time.NewTicker(15 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			for scope, n := range st.ActiveBucketsByScope() {
+				m.RatelimitBucketsActive.WithLabelValues(scope).Set(float64(n))
+			}
+		}
+	}
+}
+
 func buildRateLimiter(cfg config.RateLimitConfig, m *metrics.Metrics) (ratelimit.Store, func(), error) {
 	switch cfg.Backend {
 	case "valkey":
 		st, err := valkey.New(valkey.Config{
-			Addresses:   cfg.Valkey.Addresses,
-			Password:    os.Getenv(cfg.Valkey.PasswordEnv),
-			DB:          cfg.Valkey.DB,
-			DialTimeout: cfg.Valkey.DialTimeout.Std(),
-			KeyPrefix:   cfg.Valkey.KeyPrefix,
-			OnError:     valkey.OnError(cfg.Valkey.OnError),
+			Addresses:      cfg.Valkey.Addresses,
+			Password:       os.Getenv(cfg.Valkey.PasswordEnv),
+			DB:             cfg.Valkey.DB,
+			DialTimeout:    cfg.Valkey.DialTimeout.Std(),
+			KeyPrefix:      cfg.Valkey.KeyPrefix,
+			OnError:        valkey.OnError(cfg.Valkey.OnError),
+			OnBackendError: func() { m.RatelimitBackendErrorsTotal.WithLabelValues("valkey").Inc() },
 		})
 		if err != nil {
 			return nil, nil, err

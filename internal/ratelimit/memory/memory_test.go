@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -44,18 +45,41 @@ func TestBucketRefillsOverTime(t *testing.T) {
 	}
 }
 
+func totalBuckets(s *Store) int {
+	total := 0
+	for _, n := range s.ActiveBucketsByScope() {
+		total += n
+	}
+	return total
+}
+
 func TestJanitorEvictsIdleBuckets(t *testing.T) {
 	s := New(10 * time.Millisecond)
 	ctx := context.Background()
 	if _, err := s.Allow(ctx, "k", 10, 10, time.Minute); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if s.ActiveBuckets() != 1 {
-		t.Fatalf("expected 1 active bucket, got %d", s.ActiveBuckets())
+	if totalBuckets(s) != 1 {
+		t.Fatalf("expected 1 active bucket, got %d", totalBuckets(s))
 	}
 	time.Sleep(20 * time.Millisecond)
 	s.evictIdle(time.Now())
-	if s.ActiveBuckets() != 0 {
-		t.Fatalf("expected bucket to be evicted, got %d active", s.ActiveBuckets())
+	if totalBuckets(s) != 0 {
+		t.Fatalf("expected bucket to be evicted, got %d active", totalBuckets(s))
+	}
+}
+
+func TestActiveBucketsByScope(t *testing.T) {
+	s := New(time.Minute)
+	ctx := context.Background()
+	keys := []string{"global", "ip:formA:1.2.3.4", "form:formA"}
+	for _, k := range keys {
+		if _, err := s.Allow(ctx, k, 10, 10, time.Minute); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	want := map[string]int{"global": 1, "ip": 1, "form": 1}
+	if got := s.ActiveBucketsByScope(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ActiveBucketsByScope() = %v, want %v", got, want)
 	}
 }

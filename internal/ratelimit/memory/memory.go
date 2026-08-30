@@ -6,6 +6,7 @@ package memory
 import (
 	"context"
 	"hash/fnv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -111,14 +112,24 @@ func (s *Store) evictIdle(now time.Time) {
 	}
 }
 
-// ActiveBuckets reports the current total bucket count, across shards, for
-// the formelay_ratelimit_buckets_active metric.
-func (s *Store) ActiveBuckets() int {
-	total := 0
+// ActiveBucketsByScope reports the current bucket count grouped by the
+// substring before each key's first ':' (or the whole key if there is
+// none) — the same "global" | "ip" | "form" prefix convention
+// internal/api/submit.go uses when constructing keys, read here as a
+// generic split so this package doesn't need to import that convention.
+// Backs the formelay_ratelimit_buckets_active metric.
+func (s *Store) ActiveBucketsByScope() map[string]int {
+	counts := map[string]int{}
 	for _, sh := range s.shards {
 		sh.mu.Lock()
-		total += len(sh.buckets)
+		for k := range sh.buckets {
+			scope := k
+			if i := strings.IndexByte(k, ':'); i >= 0 {
+				scope = k[:i]
+			}
+			counts[scope]++
+		}
 		sh.mu.Unlock()
 	}
-	return total
+	return counts
 }

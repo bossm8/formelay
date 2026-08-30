@@ -57,7 +57,6 @@ func (c *Config) Validate() error {
 type genericVerifier struct {
 	cfg    Config
 	client *http.Client
-	name   string
 }
 
 // NewFactory returns a NewVerifierFunc pre-seeded with presetName's defaults
@@ -99,15 +98,9 @@ func NewFactory(presetName string) NewVerifierFunc {
 		if err := cfg.Validate(); err != nil {
 			return nil, err
 		}
-		name := presetName
-		if name == "" {
-			name = "generic"
-		}
-		return &genericVerifier{cfg: cfg, client: &http.Client{Timeout: cfg.Timeout.Std()}, name: name}, nil
+		return &genericVerifier{cfg: cfg, client: &http.Client{Timeout: cfg.Timeout.Std()}}, nil
 	}
 }
-
-func (v *genericVerifier) Type() string { return v.name }
 
 func (v *genericVerifier) Verify(ctx context.Context, responseToken, remoteIP string) (bool, error) {
 	secret := os.Getenv(v.cfg.SecretEnv)

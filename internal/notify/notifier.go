@@ -16,8 +16,6 @@ import (
 // send. Field values have already been through template rendering (and, for
 // HTML, escaping) by the time a Notifier sees them.
 type RenderedMessage struct {
-	FormID      string
-	ChannelID   string
 	Subject     string
 	Body        []byte
 	ContentType string
@@ -48,6 +46,14 @@ type TemplateRef struct {
 // channel's own package.
 type TemplateProvider interface {
 	TemplateRefs() []TemplateRef
+}
+
+// ReplyToFieldProvider is optionally implemented by a Notifier that wants
+// Reply-To populated from a named submitted field (currently: email), the
+// same optional-interface pattern as TemplateProvider — so the
+// orchestration layer doesn't need per-channel-type knowledge to support it.
+type ReplyToFieldProvider interface {
+	ReplyToField() string
 }
 
 // NewNotifierFunc constructs a Notifier from a channel's raw YAML config

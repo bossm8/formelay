@@ -37,9 +37,18 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	fc := cf.Config
 
+	// Declared here (not via := at the decode step below) so the finish
+	// closure can see whatever value fields holds at call time, nil before
+	// decode, the actual submission after. Every audit call site passes it
+	// unconditionally along with the live logging.audit.log_field_values
+	// value (read from global, not baked into the Logger at startup, so a
+	// hot reload of that setting takes effect on the next request); Log
+	// itself decides whether to actually include it.
+	var fields map[string]string
+
 	finish := func(status, code string, httpStatus int) {
 		s.Metrics.SubmissionsTotal.WithLabelValues(formID, status).Inc()
-		s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, Latency: time.Since(start)})
+		s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
 		respondError(w, httpStatus, code, requestID)
 	}
 
@@ -91,7 +100,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		finish("validation_failed", "invalid_body", http.StatusBadRequest)
 		return
 	}
-	fields := flatten(multi)
+	fields = flatten(multi)
 
 	// 4. site key
 	if !siteKeyValid(extractSiteKey(r, fields, fc.Auth), fc.Auth.SiteKey) {
@@ -114,7 +123,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	if honeypot.Triggered(fields, fc.Honeypot.FieldName) {
 		s.Metrics.HoneypotTriggeredTotal.WithLabelValues(formID).Inc()
 		s.Metrics.SubmissionsTotal.WithLabelValues(formID, "spam_dropped_honeypot").Inc()
-		s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: "spam_dropped_honeypot", Latency: time.Since(start)})
+		s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: "spam_dropped_honeypot", Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
 		respondSuccess(w, requestID)
 		return
 	}
@@ -189,7 +198,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			case config.SpamActionDrop:
 				status := "spam_dropped_ai"
 				s.Metrics.SubmissionsTotal.WithLabelValues(formID, status).Inc()
-				s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, SpamVerdict: trigger, SpamAction: string(action), Latency: time.Since(start)})
+				s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, SpamVerdict: trigger, SpamAction: string(action), Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
 				respondSuccess(w, requestID)
 				return
 			case config.SpamActionRoute:
@@ -203,7 +212,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 				if len(routeChannelIDs) == 0 {
 					status := "spam_dropped_ai"
 					s.Metrics.SubmissionsTotal.WithLabelValues(formID, status).Inc()
-					s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, SpamVerdict: trigger, SpamAction: string(action), Latency: time.Since(start)})
+					s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, SpamVerdict: trigger, SpamAction: string(action), Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
 					respondSuccess(w, requestID)
 					return
 				}
@@ -244,7 +253,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		status = "delivery_failed"
 	}
 	s.Metrics.SubmissionsTotal.WithLabelValues(formID, status).Inc()
-	s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, Channels: results, Latency: time.Since(start)})
+	s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, Channels: results, Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
 
 	if ok {
 		respondSuccess(w, requestID)

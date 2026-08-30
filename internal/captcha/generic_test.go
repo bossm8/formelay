@@ -37,7 +37,7 @@ func TestGenericVerifierPresetShape(t *testing.T) {
 		RequestEncoding: p.RequestEncoding, SecretParam: p.SecretParam,
 		ResponseParam: p.ResponseParam, RemoteIPParam: p.RemoteIPParam, SuccessField: p.SuccessField,
 	}
-	v := &genericVerifier{cfg: cfg, client: srv.Client(), name: "turnstile"}
+	v := &genericVerifier{cfg: cfg, client: srv.Client()}
 
 	ok, err := v.Verify(context.Background(), "good-token", "1.2.3.4")
 	if err != nil || !ok {
@@ -102,7 +102,7 @@ func TestGenericVerifierScoreThreshold(t *testing.T) {
 		SecretParam: "secret", ResponseParam: "response", SuccessField: "success",
 		ScoreField: "score", MinScore: 0.5,
 	}
-	v := &genericVerifier{cfg: cfg, client: srv.Client(), name: "generic"}
+	v := &genericVerifier{cfg: cfg, client: srv.Client()}
 	ok, err := v.Verify(context.Background(), "tok", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -129,7 +129,7 @@ func TestGenericVerifierJSONEncoding(t *testing.T) {
 		VerifyURL: srv.URL, RequestEncoding: "json",
 		SecretParam: "secret", ResponseParam: "response", SuccessField: "success",
 	}
-	v := &genericVerifier{cfg: cfg, client: srv.Client(), name: "generic"}
+	v := &genericVerifier{cfg: cfg, client: srv.Client()}
 	ok, err := v.Verify(context.Background(), "ok", "")
 	if err != nil || !ok {
 		t.Fatalf("expected verify to succeed: ok=%v err=%v", ok, err)
