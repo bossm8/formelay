@@ -1,3 +1,6 @@
+> [!CAUTION]
+> **Work in progress:** formelay is under active development. Config format and behavior may change without notice.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/formelay-white.png">
@@ -30,15 +33,14 @@ More generally: formelay never stores what people submit, and every part of it (
 
 ## Features
 
-- **Makes a static site interactive.** No backend of your own needed: a plain HTML `<form>` on a fully static site can point straight at formelay and just work.
-- **Multi-channel delivery.** Email (SMTP), Discord, and a generic outbound webhook out of the box, plus a clean `Notifier` interface for adding more without touching core code.
-- **Layered spam defense.** A free honeypot field, an optional CAPTCHA challenge (one generic verifier config-compatible with Turnstile, hCaptcha, reCAPTCHA v2/v3, and most other providers), and an optional AI content classifier with an injection-hardened default prompt.
-- **A security model that's honest about what it can guarantee.** The per-form site key is treated as what it actually is: a public capability token, not a secret, since anything shipped to a browser can't stay confidential. Origin allowlisting, rate limiting, and the layers above are what actually stop abuse.
-- **Per-form, per-channel templates.** `html/template` (auto-escaped) for email, `text/template` with explicit JSON escaping for Discord/webhooks/AI prompts.
-- **Hot-reloadable YAML config.** Edit `forms.d/*.yaml` or `config.yaml` and it's picked up live (fsnotify or `SIGHUP`), atomically, with the previous config staying in effect if the new one fails to parse or validate.
-- **Pluggable rate limiting.** In-memory by default; swap in Valkey to share limits across multiple replicas.
-- **Observability from day one.** Prometheus metrics and `/healthz`/`/readyz`, on a listener kept separate from the public submission port.
-- **Actually lightweight.** A handful of small dependencies, a distroless multi-stage Docker image, one binary.
+- **No backend needed.** Point a plain HTML `<form>` straight at formelay from a static site.
+- **Multi-channel delivery.** Email, Discord, and generic webhooks out of the box.
+- **Layered spam defense.** Honeypot, CAPTCHA (Turnstile/hCaptcha/reCAPTCHA-compatible), and an AI content classifier - all optional.
+- **Per-channel templates.** All can be configured independently.
+- **Hot-reloadable config.** YAML changes apply live (fsnotify or `SIGHUP`), atomically, with rollback on invalid config.
+- **Pluggable rate limiting, inbound and outbound.** In-memory by default, or Valkey to share limits across replicas — including per-channel outbound limits, so a submission burst can't blow through a mail provider's or webhook's sending quota.
+- **Built-in observability.** Prometheus metrics and `/healthz`/`/readyz` on a separate listener.
+- **Lightweight.** Few dependencies, distroless Docker image, single binary.
 
 ## Quick start
 

@@ -219,10 +219,32 @@ type FieldsConfig struct {
 }
 
 type ChannelConfig struct {
-	ID      string         `yaml:"id"`
-	Type    string         `yaml:"type"`
-	Enabled *bool          `yaml:"enabled"`
-	Config  map[string]any `yaml:"config"`
+	ID        string                  `yaml:"id"`
+	Type      string                  `yaml:"type"`
+	Enabled   *bool                   `yaml:"enabled"`
+	RateLimit *ChannelRateLimitConfig `yaml:"rate_limit"`
+	Config    map[string]any          `yaml:"config"`
+}
+
+// ChannelRateLimitConfig throttles outbound deliveries on this channel
+// (e.g. to stay under a mail provider's sending quota), independent of the
+// inbound rate_limit block above. Nil means no outbound limiting.
+type ChannelRateLimitConfig struct {
+	Rate   float64           `yaml:"rate"`
+	Window yamlutil.Duration `yaml:"window"`
+	Burst  float64           `yaml:"burst"`
+	// SharedKey, if set, groups this channel's bucket with every other
+	// channel (in any form) using the same value — for multiple channels
+	// that actually hit one real-world quota (e.g. two email channels
+	// through the same SMTP account). Unset: this channel gets its own
+	// bucket, scoped by form + channel id.
+	SharedKey string `yaml:"shared_key"`
+	// OnLimit is "wait" (default) or "fail": wait briefly for a token
+	// before sending, or fail this channel's delivery immediately.
+	OnLimit string `yaml:"on_limit"`
+	// MaxWait bounds how long "wait" blocks before giving up as a failure.
+	// Only meaningful when OnLimit is "wait" (the default). Default 5s.
+	MaxWait yamlutil.Duration `yaml:"max_wait"`
 }
 
 func (c *ChannelConfig) IsEnabled() bool {

@@ -24,6 +24,10 @@ type CompiledChannel struct {
 	Notifier    notify.Notifier
 	Templates   map[string]*render.Template
 	ContentType map[string]string
+	// RateLimit, if set, throttles outbound deliveries on this channel —
+	// see config.ChannelRateLimitConfig. A passthrough, no compilation
+	// needed (unlike Templates).
+	RateLimit *config.ChannelRateLimitConfig
 }
 
 // CompiledForm is everything built from one FormConfig.
@@ -107,7 +111,7 @@ func (a *App) compileForm(global *config.GlobalConfig, fc *config.FormConfig) (*
 		if err != nil {
 			return nil, fmt.Errorf("channel %q: %w", ch.ID, err)
 		}
-		cc := &CompiledChannel{ID: ch.ID, Notifier: n, Templates: map[string]*render.Template{}, ContentType: map[string]string{}}
+		cc := &CompiledChannel{ID: ch.ID, Notifier: n, Templates: map[string]*render.Template{}, ContentType: map[string]string{}, RateLimit: ch.RateLimit}
 		if tp, ok := n.(notify.TemplateProvider); ok {
 			for _, ref := range tp.TemplateRefs() {
 				source, err := render.ResolveSource(global.TemplatesDir, ref.Path, ref.Inline)

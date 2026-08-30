@@ -2,14 +2,19 @@ package api
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/bossm8/formelay/internal/app"
 	"github.com/bossm8/formelay/internal/audit"
 	"github.com/bossm8/formelay/internal/config"
+	"github.com/bossm8/formelay/internal/metrics"
 	"github.com/bossm8/formelay/internal/notify"
 	"github.com/bossm8/formelay/internal/render"
+	"github.com/bossm8/formelay/internal/yamlutil"
 )
 
 // stubNotifier optionally implements notify.ReplyToFieldProvider, depending
@@ -143,6 +148,155 @@ func TestAnySuccessAllSuccessOnEmptyResults(t *testing.T) {
 	}
 	if !allSuccess(empty) {
 		t.Fatal("allSuccess(nil) should be vacuously true")
+	}
+}
+
+// sequencedRateLimiter returns a scripted sequence of allow/deny results,
+// one per call, repeating the last entry once exhausted. panicIfCalled
+// lets a test prove a code path never touches the limiter at all.
+type sequencedRateLimiter struct {
+	mu            sync.Mutex
+	results       []bool
+	err           error
+	panicIfCalled bool
+	calls         int
+}
+
+func (f *sequencedRateLimiter) Allow(context.Context, string, float64, float64, time.Duration) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.panicIfCalled {
+		panic("Allow called but should not have been reached")
+	}
+	f.calls++
+	if f.err != nil {
+		return false, f.err
+	}
+	if len(f.results) == 0 {
+		return true, nil
+	}
+	r := f.results[0]
+	if len(f.results) > 1 {
+		f.results = f.results[1:]
+	}
+	return r, nil
+}
+
+func rateLimitedChannel(t *testing.T) *config.ChannelRateLimitConfig {
+	t.Helper()
+	return &config.ChannelRateLimitConfig{Rate: 1, Window: yamlutil.Duration(time.Minute), Burst: 1}
+}
+
+func TestAwaitOutboundTokenOnLimitFail(t *testing.T) {
+	rl := rateLimitedChannel(t)
+	rl.OnLimit = "fail"
+	fake := &sequencedRateLimiter{results: []bool{false}}
+	s := &Server{RateLimiter: fake}
+
+	waited, allowed, err := s.awaitOutboundToken(context.Background(), "contact", "email-owner", rl)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if allowed {
+		t.Fatal("expected not allowed")
+	}
+	if waited != 0 {
+		t.Fatalf("on_limit: fail must never wait, got %v", waited)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("expected exactly 1 Allow call for on_limit: fail, got %d", fake.calls)
+	}
+}
+
+func TestAwaitOutboundTokenWaitEventuallyAllowed(t *testing.T) {
+	orig := outboundPollInterval
+	outboundPollInterval = time.Millisecond
+	t.Cleanup(func() { outboundPollInterval = orig })
+
+	rl := rateLimitedChannel(t)
+	rl.OnLimit = "wait"
+	rl.MaxWait = yamlutil.Duration(time.Second)
+	fake := &sequencedRateLimiter{results: []bool{false, false, true}}
+	s := &Server{RateLimiter: fake}
+
+	waited, allowed, err := s.awaitOutboundToken(context.Background(), "contact", "email-owner", rl)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !allowed {
+		t.Fatal("expected eventually allowed")
+	}
+	if waited <= 0 {
+		t.Fatalf("expected non-zero wait once polling happened, got %v", waited)
+	}
+	if fake.calls != 3 {
+		t.Fatalf("expected 3 Allow calls (1 immediate + 2 polls), got %d", fake.calls)
+	}
+}
+
+func TestAwaitOutboundTokenWaitTimesOut(t *testing.T) {
+	orig := outboundPollInterval
+	outboundPollInterval = time.Millisecond
+	t.Cleanup(func() { outboundPollInterval = orig })
+
+	rl := rateLimitedChannel(t)
+	rl.OnLimit = "wait"
+	rl.MaxWait = yamlutil.Duration(5 * time.Millisecond)
+	fake := &sequencedRateLimiter{results: []bool{false}} // always denies
+	s := &Server{RateLimiter: fake}
+
+	waited, allowed, err := s.awaitOutboundToken(context.Background(), "contact", "email-owner", rl)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if allowed {
+		t.Fatal("expected not allowed once max_wait elapses")
+	}
+	if waited < rl.MaxWait.Std() {
+		t.Fatalf("expected waited >= max_wait (%v), got %v", rl.MaxWait.Std(), waited)
+	}
+}
+
+func TestAwaitOutboundTokenBackendErrorFailsOpen(t *testing.T) {
+	rl := rateLimitedChannel(t)
+	fake := &sequencedRateLimiter{err: errors.New("backend unreachable")}
+	s := &Server{RateLimiter: fake}
+
+	_, _, err := s.awaitOutboundToken(context.Background(), "contact", "email-owner", rl)
+	if err == nil {
+		t.Fatal("expected the backend error to be returned, not swallowed")
+	}
+	// sendOne's contract (not exercised directly here): err != nil means
+	// "don't treat as rate_limited" — the caller falls through to attempt
+	// the send anyway, matching handleSubmit's existing inbound convention.
+}
+
+func TestSendOneSkipsRateLimitEntirelyWhenUnset(t *testing.T) {
+	s := &Server{
+		RateLimiter: &sequencedRateLimiter{panicIfCalled: true},
+		Metrics:     metrics.New("test", "test", "test"),
+	}
+	cc := &app.CompiledChannel{Notifier: &stubNotifierNoReplyTo{}} // RateLimit left nil
+	result := s.sendOne(context.Background(), "contact", "email-owner", cc, notify.RenderedMessage{})
+	if !result.Success {
+		t.Fatalf("expected success, got %+v", result)
+	}
+}
+
+func TestSendOneRecordsRateLimited(t *testing.T) {
+	rl := rateLimitedChannel(t)
+	rl.OnLimit = "fail"
+	s := &Server{
+		RateLimiter: &sequencedRateLimiter{results: []bool{false}},
+		Metrics:     metrics.New("test", "test", "test"),
+	}
+	cc := &app.CompiledChannel{Notifier: &stubNotifierNoReplyTo{}, RateLimit: rl}
+	result := s.sendOne(context.Background(), "contact", "email-owner", cc, notify.RenderedMessage{})
+	if result.Success {
+		t.Fatal("expected failure")
+	}
+	if !strings.Contains(result.Error, "rate_limited") {
+		t.Fatalf("expected a rate_limited error, got %q", result.Error)
 	}
 }
 

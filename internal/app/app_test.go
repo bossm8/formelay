@@ -102,6 +102,53 @@ channels:
 	}
 }
 
+// TestCompileFormPassesThroughChannelRateLimit proves the outbound
+// rate_limit block on a channel survives compilation unchanged — it's a
+// pure passthrough onto CompiledChannel, no parsing needed (unlike
+// templates).
+func TestCompileFormPassesThroughChannelRateLimit(t *testing.T) {
+	dir := t.TempDir()
+	writeGlobalConfig(t, dir)
+	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+id: contact
+auth:
+  site_key: "key"
+channels:
+  - id: ch1
+    type: fake
+    rate_limit:
+      rate: 5
+      window: 1m
+      burst: 5
+      shared_key: "primary-smtp"
+      on_limit: wait
+      max_wait: 3s
+  - id: ch2
+    type: fake
+`)
+	regs := newRegistries()
+	regs.Notify.Register("fake", func(map[string]any, notify.GlobalDefaults) (notify.Notifier, error) {
+		return fakeNotifier{}, nil
+	})
+	a := New(filepath.Join(dir, "config.yaml"), regs)
+	if err := a.Reload(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	cf := a.Current().Forms["contact"]
+
+	rl := cf.Channels["ch1"].RateLimit
+	if rl == nil {
+		t.Fatal("expected ch1.RateLimit to be populated")
+	}
+	if rl.Rate != 5 || rl.Burst != 5 || rl.SharedKey != "primary-smtp" || rl.OnLimit != "wait" {
+		t.Fatalf("unexpected passthrough: %+v", rl)
+	}
+
+	if cf.Channels["ch2"].RateLimit != nil {
+		t.Fatal("expected ch2.RateLimit to stay nil: rate_limit is opt-in, unset by default")
+	}
+}
+
 // TestAppReloadAllOrNothing locks in the documented guarantee: a single bad
 // form aborts the whole reload, and the previously published Runtime keeps
 // serving unchanged.

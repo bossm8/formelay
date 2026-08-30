@@ -168,7 +168,32 @@ A list of delivery targets:
 | `id` | string | Unique within the form; used in metrics, audit logs, and `spam_filter.route.*_channels` references. |
 | `type` | `email` \| `discord` \| `webhook` | See below. |
 | `enabled` | bool | Default `true`. A disabled channel's config (including any `*_env` secret it needs) is never validated or required. |
+| `rate_limit` | object | Optional. Throttles *outbound* deliveries on this channel — see below. |
 | `config` | map | Type-specific — see below. |
+
+#### `rate_limit` (optional)
+
+Independent of the form-level `rate_limit` above (which throttles *incoming* submissions) — this throttles how often formelay actually sends *out* on this one channel, so a burst of legitimate submissions can't blow through a mail provider's or webhook's sending quota. Unset: no outbound limiting, unchanged from before this existed.
+
+```yaml
+rate_limit:
+  rate: 10          # required: tokens per window
+  window: 1m         # required
+  burst: 10           # required: max burst size
+  shared_key: ""        # optional: channels (in any form) sharing this exact
+                          #   value draw from one bucket instead of each
+                          #   getting their own — for multiple channels that
+                          #   actually hit one real quota (e.g. two email
+                          #   channels through the same SMTP account).
+                          #   Unset: this channel's own bucket, scoped by
+                          #   form + channel id.
+  on_limit: wait          # "wait" (default) | "fail"
+  max_wait: 5s              # only used when on_limit is "wait" (its default
+                              #   too, if unset); how long to block for a
+                              #   token before giving up as a failed delivery
+```
+
+`rate`/`window`/`burst` use the same token-bucket semantics as the [rate rules](#rate-rules) above. `on_limit: wait` blocks (up to `max_wait`) for capacity before sending — formelay has no queue, so this is the only way to avoid dropping a delivery outright under a legitimate burst; `on_limit: fail` fails the delivery immediately instead, with zero added latency. Either way, an exceeded limit shows up as `status="rate_limited"` in `formelay_deliveries_total` and the audit log, distinct from an actual send failure. This uses the same backend as `rate_limit.backend` above (`memory` or `valkey`) — with `valkey`, an outbound limit is automatically shared across replicas too, which matters once there's more than one formelay instance hitting the same provider quota.
 
 #### `type: email`
 

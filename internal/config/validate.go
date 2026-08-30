@@ -85,6 +85,16 @@ func ValidateForm(f *FormConfig) error {
 		if ch.Type == "" {
 			return fmt.Errorf("form %q: channel %q: 'type' is required", f.ID, ch.ID)
 		}
+		if rl := ch.RateLimit; rl != nil {
+			switch rl.OnLimit {
+			case "", "wait", "fail":
+			default:
+				return fmt.Errorf("form %q: channel %q: rate_limit.on_limit must be 'wait' or 'fail'", f.ID, ch.ID)
+			}
+			if rl.Rate <= 0 || rl.Window.Std() <= 0 || rl.Burst <= 0 {
+				return fmt.Errorf("form %q: channel %q: rate_limit.rate, .window, and .burst must all be > 0", f.ID, ch.ID)
+			}
+		}
 	}
 
 	if f.SpamFilter.Enabled {

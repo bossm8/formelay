@@ -11,21 +11,22 @@ import (
 type Metrics struct {
 	Registry *prometheus.Registry
 
-	SubmissionsTotal            *prometheus.CounterVec
-	DeliveriesTotal             *prometheus.CounterVec
-	DeliveryLatencySeconds      *prometheus.HistogramVec
-	RateLimitedTotal            *prometheus.CounterVec
-	HoneypotTriggeredTotal      *prometheus.CounterVec
-	CaptchaVerificationsTotal   *prometheus.CounterVec
-	SpamFilterVerdictsTotal     *prometheus.CounterVec
-	SpamFilterActionsTotal      *prometheus.CounterVec
-	SpamFilterLatencySeconds    *prometheus.HistogramVec
-	ConfigReloadTotal           *prometheus.CounterVec
-	ConfigLastReloadTimestamp   prometheus.Gauge
-	RatelimitBucketsActive      *prometheus.GaugeVec
-	RatelimitBackendErrorsTotal *prometheus.CounterVec
-	HTTPRequestsInFlight        prometheus.Gauge
-	BuildInfo                   *prometheus.GaugeVec
+	SubmissionsTotal             *prometheus.CounterVec
+	DeliveriesTotal              *prometheus.CounterVec
+	DeliveryLatencySeconds       *prometheus.HistogramVec
+	RateLimitedTotal             *prometheus.CounterVec
+	HoneypotTriggeredTotal       *prometheus.CounterVec
+	CaptchaVerificationsTotal    *prometheus.CounterVec
+	SpamFilterVerdictsTotal      *prometheus.CounterVec
+	SpamFilterActionsTotal       *prometheus.CounterVec
+	SpamFilterLatencySeconds     *prometheus.HistogramVec
+	ConfigReloadTotal            *prometheus.CounterVec
+	ConfigLastReloadTimestamp    prometheus.Gauge
+	RatelimitBucketsActive       *prometheus.GaugeVec
+	RatelimitBackendErrorsTotal  *prometheus.CounterVec
+	RatelimitOutboundWaitSeconds *prometheus.HistogramVec
+	HTTPRequestsInFlight         prometheus.Gauge
+	BuildInfo                    *prometheus.GaugeVec
 }
 
 func New(version, commit, goVersion string) *Metrics {
@@ -75,6 +76,10 @@ func New(version, commit, goVersion string) *Metrics {
 		RatelimitBackendErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "formelay_ratelimit_backend_errors_total", Help: "Rate-limit backend connectivity/timeout errors.",
 		}, []string{"backend"}),
+		RatelimitOutboundWaitSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "formelay_ratelimit_outbound_wait_seconds", Help: "Time spent waiting for an outbound channel rate-limit token (on_limit: wait).",
+			Buckets: []float64{.1, .25, .5, 1, 2.5, 5, 10, 30},
+		}, []string{"form", "channel"}),
 		HTTPRequestsInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "formelay_http_requests_in_flight", Help: "In-flight HTTP requests.",
 		}),
@@ -88,7 +93,7 @@ func New(version, commit, goVersion string) *Metrics {
 		m.HoneypotTriggeredTotal, m.CaptchaVerificationsTotal, m.SpamFilterVerdictsTotal,
 		m.SpamFilterActionsTotal, m.SpamFilterLatencySeconds, m.ConfigReloadTotal,
 		m.ConfigLastReloadTimestamp, m.RatelimitBucketsActive, m.RatelimitBackendErrorsTotal,
-		m.HTTPRequestsInFlight, m.BuildInfo,
+		m.RatelimitOutboundWaitSeconds, m.HTTPRequestsInFlight, m.BuildInfo,
 	)
 	m.BuildInfo.WithLabelValues(version, commit, goVersion).Set(1)
 	return m

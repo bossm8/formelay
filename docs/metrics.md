@@ -9,7 +9,7 @@ Every metric below is on a dedicated registry (`internal/metrics`), populated at
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
 | `formelay_submissions_total` | counter | `form`, `status` | One increment per submission attempt. `status` is one of `success`, `validation_failed`, `origin_denied`, `auth_denied`, `rate_limited`, `spam_dropped_honeypot`, `captcha_failed`, `spam_dropped_ai`, `delivery_failed` — the same vocabulary as the audit log's `status` field. |
-| `formelay_deliveries_total` | counter | `form`, `channel`, `channel_type`, `status` | One increment per channel delivery attempt. `channel` is the form's own `channels[].id`; `channel_type` is `email`\|`discord`\|`webhook`; `status` is `success`\|`failure`. |
+| `formelay_deliveries_total` | counter | `form`, `channel`, `channel_type`, `status` | One increment per channel delivery attempt. `channel` is the form's own `channels[].id`; `channel_type` is `email`\|`discord`\|`webhook`; `status` is `success`\|`failure`\|`rate_limited` (this channel's own `rate_limit` — see [configuration.md](configuration.md#rate_limit-optional) — rejected or timed out waiting for capacity; distinct from an actual send failure). |
 | `formelay_delivery_latency_seconds` | histogram | `form`, `channel_type` | Time spent in one channel's `Notifier.Send`, including template rendering. |
 
 ## Rate limiting
@@ -19,6 +19,7 @@ Every metric below is on a dedicated registry (`internal/metrics`), populated at
 | `formelay_rate_limited_total` | counter | `form`, `scope` | One increment per rejected request. `scope` is `global`\|`per_ip`\|`per_form`. |
 | `formelay_ratelimit_buckets_active` | gauge | `scope` | Current in-process bucket count, sampled every 15s. **Memory backend only** — with `rate_limit.backend: valkey`, bucket state lives in Valkey itself, not in this process, so this stays unset. `scope` is `global`\|`ip`\|`form`, taken from the bucket key's own prefix. |
 | `formelay_ratelimit_backend_errors_total` | counter | `backend` | Connectivity/timeout errors talking to the rate-limit backend itself (distinct from a normal allow/deny result). **Valkey backend only** — the memory backend never errors, so `backend="memory"` never appears; `on_error` (see [configuration.md](configuration.md#rate_limit)) decides whether such an error still allows the request through. |
+| `formelay_ratelimit_outbound_wait_seconds` | histogram | `form`, `channel` | Time spent waiting for an outbound channel rate-limit token. Only observed once actual waiting happened (`rate_limit.on_limit: wait`, see [configuration.md](configuration.md#rate_limit-optional)) — a channel with no `rate_limit` configured, or one whose first check already passed, never appears here. |
 
 ## Honeypot, CAPTCHA & spam filter
 

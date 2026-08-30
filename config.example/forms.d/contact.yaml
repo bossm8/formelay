@@ -59,6 +59,16 @@ channels:
   - id: email-owner
     type: email
     enabled: true
+    # Stay under your SMTP provider's sending quota: wait briefly for
+    # capacity rather than failing outright under a legitimate burst of
+    # submissions, and only actually fail if it's still exhausted after
+    # max_wait.
+    rate_limit:
+      rate: 10
+      window: 1m
+      burst: 10
+      on_limit: wait
+      max_wait: 5s
     config:
       to: ["owner@example.com"]
       subject_template: "contact-email-subject.tmpl"

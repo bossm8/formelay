@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/bossm8/formelay/internal/yamlutil"
 )
 
 func TestValidateForm(t *testing.T) {
@@ -235,6 +238,46 @@ func TestValidateForm(t *testing.T) {
 		f.SpamFilter.Route.ErrorTemplate = "error-review.tmpl"
 		if err := ValidateForm(f); err != nil {
 			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("channel rate_limit: valid block passes", func(t *testing.T) {
+		f := base()
+		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10}
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("channel rate_limit: invalid on_limit rejected", func(t *testing.T) {
+		f := base()
+		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10, OnLimit: "retry"}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for invalid rate_limit.on_limit")
+		}
+	})
+
+	t.Run("channel rate_limit: non-positive rate rejected", func(t *testing.T) {
+		f := base()
+		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 0, Window: yamlutil.Duration(time.Minute), Burst: 10}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for rate_limit.rate <= 0")
+		}
+	})
+
+	t.Run("channel rate_limit: zero window rejected", func(t *testing.T) {
+		f := base()
+		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 10, Burst: 10}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for rate_limit.window <= 0")
+		}
+	})
+
+	t.Run("channel rate_limit: non-positive burst rejected", func(t *testing.T) {
+		f := base()
+		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 0}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for rate_limit.burst <= 0")
 		}
 	})
 }
