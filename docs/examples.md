@@ -26,7 +26,7 @@ The simplest real case: a few fields, a honeypot, delivery to both an inbox and 
 </form>
 ```
 
-That example uses `transport: form_field` (a hidden `_key` input) so it works with zero JavaScript — a real `<form>` POST straight to Formelay, page-navigation redirect and all. `config.example/forms.d/contact.yaml` as shipped uses `transport: header` instead (the default, and the better choice whenever you *do* have JS available — see [Security model](../README.md#security-model) on why `header` avoids a `Referer`-based leak that `form_field` and URL-embedded tokens don't). The matching fetch call:
+That example uses `transport: form_field` (a hidden `_key` input) so it works with zero JavaScript — a real `<form>` POST straight to formelay, page-navigation redirect and all. `config.example/forms.d/contact.yaml` as shipped uses `transport: header` instead (the default, and the better choice whenever you *do* have JS available — see [Security model](../README.md#security-model) on why `header` avoids a `Referer`-based leak that `form_field` and URL-embedded tokens don't). The matching fetch call:
 
 ```js
 async function submitContact(form) {
@@ -34,7 +34,7 @@ async function submitContact(form) {
     method: "POST",
     headers: { "X-Formelay-Site-Key": "<your public site key>" },
     body: new FormData(form), // multipart/form-data — works with <input type=file> present too;
-                                // Formelay itself rejects any file part with 400, text fields only
+                                // formelay itself rejects any file part with 400, text fields only
   });
   const body = await res.json();
   if (!body.success) throw new Error(body.error);
@@ -91,6 +91,10 @@ The fullest example: a required `subject` field alongside the usual name/email/m
 
 ```html
 <form id="support">
+  <!-- honeypot: real visitors never see or fill this in -->
+  <input type="text" name="website" tabindex="-1" autocomplete="off"
+         style="position:absolute;left:-9999px" aria-hidden="true">
+
   <input type="hidden" name="cf-turnstile-response" id="turnstile-token">
   <div class="cf-turnstile" data-sitekey="<your Turnstile site key>"
        data-callback="(token) => document.getElementById('turnstile-token').value = token"></div>
@@ -121,7 +125,7 @@ This one ships with `captcha.enabled: false` and `spam_filter.enabled: false` �
 1. Get a [Turnstile](https://developers.cloudflare.com/turnstile/) site key + secret (or swap `provider: turnstile` for `hcaptcha`/`recaptcha_v2`/`recaptcha_v3` — same shape, different preset).
 2. Set `FORM_SUPPORT_TURNSTILE_SECRET` and `SPAM_FILTER_API_KEY` in `.env` to real values.
 3. Flip `captcha.enabled` and `spam_filter.enabled` to `true` in `support.yaml`.
-4. Save — Formelay picks the change up live, no restart needed. If either value doesn't parse or a secret is genuinely missing, the reload is rejected and logged, and the *previous* (working) config keeps serving.
+4. Save — formelay picks the change up live, no restart needed. If either value doesn't parse or a secret is genuinely missing, the reload is rejected and logged, and the *previous* (working) config keeps serving.
 
 ## Extending with a new CAPTCHA provider
 

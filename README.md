@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/formelay-white.png">
     <source media="(prefers-color-scheme: light)" srcset="assets/formelay-black.png">
-    <img src="assets/formelay-black.png" alt="Formelay" width="360">
+    <img src="assets/formelay-black.png" alt="formelay" width="360">
   </picture>
 </p>
 
@@ -13,23 +13,23 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/bossm8/formelay" alt="License"></a>
 </p>
 
-# Formelay
+# formelay
 
 **Receive website form submissions and relay them straight to your inbox.**
 
-Formelay is a lightweight, self-hosted relay for web form submissions. Point a plain HTML `<form>` or a `fetch()` call at it, and it authenticates the request, filters out spam, renders a template you control, and forwards the result to email, Discord, or any webhook-based service.
+formelay is a lightweight, self-hosted relay for web form submissions. Point a plain HTML `<form>` or a `fetch()` call at it, and it authenticates the request, filters out spam, renders a template you control, and forwards the result to email, Discord, or any webhook-based service.
 
 No dashboard, no database, no lock-in. Just a static binary and a YAML file, doing one job well.
 
 ## Why
 
-The case Formelay is built for: a fully static site (a static site generator's output, GitHub Pages, a CDN bucket, whatever) that still needs one genuinely interactive thing, a contact form, a signup box, a support form, without standing up a backend just for that. Point a plain `<form>` on that static site straight at Formelay from the browser and it works: real validation, spam defense, and delivery to your inbox or wherever, with no server code of your own anywhere in the picture.
+The case formelay is built for: a fully static site (a static site generator's output, GitHub Pages, a CDN bucket, whatever) that still needs one genuinely interactive thing, a contact form, a signup box, a support form, without standing up a backend just for that. Point a plain `<form>` on that static site straight at formelay from the browser and it works: real validation, spam defense, and delivery to your inbox or wherever, with no server code of your own anywhere in the picture.
 
-More generally: Formelay never stores what people submit, and every part of it (routing rules, spam defenses, delivery channels) lives in a config file next to your other infrastructure, rather than in a third-party dashboard. If you'd rather run this piece of your stack yourself than depend on a hosted form-backend service, this is that option.
+More generally: formelay never stores what people submit, and every part of it (routing rules, spam defenses, delivery channels) lives in a config file next to your other infrastructure, rather than in a third-party dashboard. If you'd rather run this piece of your stack yourself than depend on a hosted form-backend service, this is that option.
 
 ## Features
 
-- **Makes a static site interactive.** No backend of your own needed: a plain HTML `<form>` on a fully static site can point straight at Formelay and just work.
+- **Makes a static site interactive.** No backend of your own needed: a plain HTML `<form>` on a fully static site can point straight at formelay and just work.
 - **Multi-channel delivery.** Email (SMTP), Discord, and a generic outbound webhook out of the box, plus a clean `Notifier` interface for adding more without touching core code.
 - **Layered spam defense.** A free honeypot field, an optional CAPTCHA challenge (one generic verifier config-compatible with Turnstile, hCaptcha, reCAPTCHA v2/v3, and most other providers), and an optional AI content classifier with an injection-hardened default prompt.
 - **A security model that's honest about what it can guarantee.** The per-form site key is treated as what it actually is: a public capability token, not a secret, since anything shipped to a browser can't stay confidential. Origin allowlisting, rate limiting, and the layers above are what actually stop abuse.

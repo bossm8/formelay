@@ -35,7 +35,7 @@ smtp_defaults:
   username: "relay@example.com"
   password_env: "SMTP_PASSWORD"
   starttls: true
-  from: "Formelay <relay@example.com>"
+  from: "formelay <relay@example.com>"
   timeout: 10s
 
 logging:

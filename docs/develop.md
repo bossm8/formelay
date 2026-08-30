@@ -1,4 +1,4 @@
-# Developing Formelay
+# Developing formelay
 
 ## Project layout
 
@@ -42,11 +42,11 @@ GitHub Actions runs gofmt/vet/build/`-race`-tests/`govulncheck`/the Valkey integ
 ## Testing approach
 
 - Unit tests live next to the code they cover and run with `make test`/`make race`; no network or Docker needed.
-- `internal/ratelimit/valkey` additionally has an `integration` build-tagged suite (`internal/ratelimit/valkey/integration_test.go`) that only runs against a real Valkey, driven by `make test-integration` via `docker-compose.test.yml`. It's the one package where the in-process unit tests can't prove the thing that actually matters, that state is genuinely shared across two independently-constructed `Store` instances, standing in for two Formelay replicas.
+- `internal/ratelimit/valkey` additionally has an `integration` build-tagged suite (`internal/ratelimit/valkey/integration_test.go`) that only runs against a real Valkey, driven by `make test-integration` via `docker-compose.test.yml`. It's the one package where the in-process unit tests can't prove the thing that actually matters, that state is genuinely shared across two independently-constructed `Store` instances, standing in for two formelay replicas.
 - `internal/api`'s handler tests drive the real submission pipeline end to end (`httptest`, a fake rate limiter, a real `app.App`) rather than mocking individual steps, so they catch pipeline-ordering bugs a narrower unit test would miss.
 - `internal/captcha` additionally has a `live` build-tagged suite (`internal/captcha/live_test.go`, `make test-live`) that calls the real Turnstile and hCaptcha verify endpoints using each provider's official public test key pairs, no account or secret of your own needed. The regular `TestGenericVerifier*` unit tests only prove our code talks correctly to a fake server we wrote ourselves; this suite proves the request shape (field names, encoding, response parsing) matches what the real provider actually expects, including a `provider: generic` case (manually-configured fields, no preset) reused against Turnstile's real endpoint, and a negative case (Turnstile's always-fail test secret) so a `success: false` response is exercised too, not just `true`.
 
-## Extending Formelay
+## Extending formelay
 
 The channel, CAPTCHA, and spam-classifier subsystems are each a small `Registry` (`type: string` to Go constructor) plus a shared interface, following the same shape:
 

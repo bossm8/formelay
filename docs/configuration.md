@@ -1,6 +1,6 @@
 # Configuration reference
 
-Formelay reads two kinds of YAML: one global `config.yaml`, and one file per form under `forms_dir` (`forms.d/*.yaml` by default). Both are strictly decoded — an unknown key is a config-load error, not a silently ignored typo. Both are hot-reloaded (fsnotify watching the directories, or `SIGHUP`): a new config is fully validated, including parsing every template it references, before it replaces the running one. An invalid change is rejected and logged; the previous config keeps serving.
+formelay reads two kinds of YAML: one global `config.yaml`, and one file per form under `forms_dir` (`forms.d/*.yaml` by default). Both are strictly decoded — an unknown key is a config-load error, not a silently ignored typo. Both are hot-reloaded (fsnotify watching the directories, or `SIGHUP`): a new config is fully validated, including parsing every template it references, before it replaces the running one. An invalid change is rejected and logged; the previous config keeps serving.
 
 Working examples of everything below live in [`config.example/`](../config.example/) and are explained end-to-end in [examples.md](examples.md).
 
@@ -13,7 +13,7 @@ Working examples of everything below live in [`config.example/`](../config.examp
 | `listen_addr` | string | `0.0.0.0:8080` | Public submission API listener. |
 | `read_timeout`, `write_timeout`, `idle_timeout`, `read_header_timeout` | duration | `read_header_timeout` falls back to `5s` if unset; others `0` (no timeout) | Standard `net/http.Server` timeouts. |
 | `shutdown_grace_period` | duration | `15s` | How long graceful shutdown waits for in-flight requests. |
-| `tls.enabled`, `tls.cert_file`, `tls.key_file` | bool, string, string | — | Reserved for direct TLS termination; most deployments terminate TLS in front of Formelay instead. |
+| `tls.enabled`, `tls.cert_file`, `tls.key_file` | bool, string, string | — | Reserved for direct TLS termination; most deployments terminate TLS in front of formelay instead. |
 | `trusted_proxies` | []string | `[]` | CIDRs (or bare IPs, treated as `/32`/`/128`) allowed to set `X-Forwarded-For`. Only trust your actual reverse proxy's address here. |
 
 ### `forms_dir`, `templates_dir`
@@ -48,7 +48,7 @@ A rate rule is `{rate: <float>, window: <duration>, burst: <float>}` — a token
 #### Rate limiting
 
 - **`memory`**: in-process, sharded token buckets. Correct for a single running instance; state is lost on restart and isn't shared across replicas.
-- **`valkey`**: bucket state lives in Valkey, updated atomically via a Lua script, so multiple Formelay replicas share the same limits. `New()` connects eagerly at startup — an unreachable Valkey at boot is a hard startup failure. `on_error` only governs a *later* outage (a `Do()` call failing after a successful connection): `allow` (default) degrades to unrate-limited rather than rejecting all traffic; `deny` fails closed.
+- **`valkey`**: bucket state lives in Valkey, updated atomically via a Lua script, so multiple formelay replicas share the same limits. `New()` connects eagerly at startup — an unreachable Valkey at boot is a hard startup failure. `on_error` only governs a *later* outage (a `Do()` call failing after a successful connection): `allow` (default) degrades to unrate-limited rather than rejecting all traffic; `deny` fails closed.
 
 ### `smtp_defaults`
 
