@@ -23,7 +23,7 @@
 
 formelay is a lightweight, self-hosted relay for web form submissions. Point a plain HTML `<form>` or a `fetch()` call at it, and it authenticates the request, filters out spam, renders a template you control, and forwards the result to email, Discord, or any webhook-based service.
 
-No dashboard, no database, no lock-in. Just a static binary and a YAML file, doing one job well.
+**No dashboard**, **no database**, **no lock-in**. Just a static binary and a YAML file, doing one job well.
 
 ## Why
 
