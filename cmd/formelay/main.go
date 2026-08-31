@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -119,6 +120,9 @@ func runServe(args []string) {
 			status = "failure"
 		} else {
 			m.ConfigLastReloadTimestamp.Set(float64(time.Now().Unix()))
+			if ids := formsWithOriginCheckDisabled(a.Current().Forms); len(ids) > 0 {
+				log.Warn("origin/CORS checking is fully disabled (allowed_origins: DANGEROUS_DISABLED) — development only, never leave this on in production", "forms", ids)
+			}
 		}
 		m.ConfigReloadTotal.WithLabelValues(status).Inc()
 		return err
@@ -261,6 +265,24 @@ func nonZero(d, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// formsWithOriginCheckDisabled returns the ids of every form whose
+// allowed_origins contains api.DangerousDisableOriginCheck, sorted for
+// stable log output — used to warn on every reload, not just once at
+// startup, so it stays visible for as long as it's actually configured.
+func formsWithOriginCheckDisabled(forms map[string]*app.CompiledForm) []string {
+	var ids []string
+	for id, cf := range forms {
+		for _, o := range cf.Config.AllowedOrigins {
+			if o == api.DangerousDisableOriginCheck {
+				ids = append(ids, id)
+				break
+			}
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // sampleActiveBuckets periodically snapshots st's per-scope bucket counts

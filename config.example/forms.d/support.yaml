@@ -51,8 +51,13 @@ rate_limit:
 
 fields:
   required: ["name", "email", "subject", "message"]
+  # order_id is deliberately NOT in required: it's optional, but when a
+  # submitter does provide one it must look like a real order reference —
+  # this is what "non-required fields can still be validated" looks like
+  # in practice.
   validators:
     email: "email"
+    order_id: 'regex:^[A-Z0-9]{6,12}$'
   max_field_length: 5000
 
 channels_required: any

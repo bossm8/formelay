@@ -101,7 +101,7 @@ Inherited by any `email` channel that doesn't override the same field itself.
 | `id` | string | — | Required. Used in the URL (`/f/<id>/submit`) and as the map key — must be unique across `forms_dir`. |
 | `display_name` | string | — | Human-readable name, available to templates as `.Form.DisplayName`. |
 | `enabled` | bool | `true` | Set `false` to keep a form's config in place but stop serving it (`404`). |
-| `allowed_origins` | []string | — | Exact origins (`https://example.com`) or a `https://*.example.com` wildcard-subdomain entry. |
+| `allowed_origins` | []string | — | Exact origins (`https://example.com`) or a `https://*.example.com` wildcard-subdomain entry. **Development only:** the literal entry `DANGEROUS_DISABLED` disables origin/CORS checking entirely for this form, including a submission with no `Origin` header at all — unlike every other entry, which never matches a missing origin. It exists purely so local testing (`file://` pages, arbitrary dev-server ports) isn't blocked by the allowlist. Every config reload while it's set logs a warning naming the form, on every single reload for as long as it stays configured, specifically so it can't be left on unnoticed. Never use it on anything reachable from the internet — origin allowlisting is one of formelay's real defense layers (see [Security model](../README.md#security-model)), and this removes it completely. |
 | `channels_required` | `any` \| `all` \| `none` | `any` | What counts as delivery success for the HTTP response: at least one channel, every channel, or don't care (always `200`). |
 
 ### `auth`
@@ -155,9 +155,16 @@ Inherited by any `email` channel that doesn't override the same field itself.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `required` | []string | `[]` | Field names that must be present and non-empty after sanitization. |
-| `validators` | map[string]string | `{}` | Field name → validator name. Built-in validators: `email` (`net/mail.ParseAddress`), `url` (must have a scheme and host), `notblank`. |
+| `required` | []string | `[]` | Field names that must be present and non-empty after sanitization. Any submitted field *not* listed here is optional: accepted if present, silently ignored if omitted — there's no separate "declare an optional field" setting, absence from `required` is what makes a field optional. |
+| `validators` | map[string]string | `{}` | Field name → validator name. Built-in validators: `email` (`net/mail.ParseAddress`), `url` (must have a scheme and host), `notblank`; or a custom pattern via `regex:<pattern>` (see below). Applies to optional fields too, but only fires on submissions where the field is actually present. An unrecognized validator name (a typo, or neither a built-in nor `regex:...`) is a config-load error, not a silent no-op. |
 | `max_field_length` | int | `5000` | Rune cap per field, applied after sanitization. |
+
+**Custom validators**: `regex:<pattern>` matches the field value against a Go (RE2) regular expression — no automatic `^...$` anchoring, the pattern controls that itself, so `regex:hello` matches anywhere `hello` appears in the value, same as plain Go `regexp.MatchString`. The pattern is checked for valid syntax at config load (a broken regex fails the reload, not a live request) and compiled once, cached by pattern text, not recompiled per submission. Prefer single-quoted YAML for the pattern to avoid backslash-escaping fights with YAML's double-quoted-string escaping:
+```yaml
+fields:
+  validators:
+    zip: 'regex:^\d{5}$'
+```
 
 ### `channels`
 

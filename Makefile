@@ -48,6 +48,9 @@ test-integration:
 test-live:
 	$(DOCKER_RUN) go test -tags=live ./internal/captcha/... -v
 
+keygen:
+	$(DOCKER_RUN) go run cmd/formelay/main.go keygen
+
 docker-build:
 	docker build -t formelay:dev .
 

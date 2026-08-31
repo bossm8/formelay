@@ -280,6 +280,38 @@ func TestValidateForm(t *testing.T) {
 			t.Fatal("expected error for rate_limit.burst <= 0")
 		}
 	})
+
+	t.Run("fields.validators: built-in kinds accepted", func(t *testing.T) {
+		f := base()
+		f.Fields.Validators = map[string]string{"a": "email", "b": "url", "c": "notblank"}
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("fields.validators: valid regex accepted", func(t *testing.T) {
+		f := base()
+		f.Fields.Validators = map[string]string{"zip": `regex:^\d{5}$`}
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("fields.validators: invalid regex syntax rejected", func(t *testing.T) {
+		f := base()
+		f.Fields.Validators = map[string]string{"zip": "regex:^[unterminated"}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for invalid regex syntax")
+		}
+	})
+
+	t.Run("fields.validators: unknown kind rejected (previously silently no-op'd)", func(t *testing.T) {
+		f := base()
+		f.Fields.Validators = map[string]string{"email": "emial"}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for unrecognized validator kind")
+		}
+	})
 }
 
 func TestValidateGlobal(t *testing.T) {

@@ -78,6 +78,11 @@ func TestRunValidator(t *testing.T) {
 		{"notblank", "something", true},
 		{"notblank", "", false},
 		{"unknown-validator-name", "anything", true}, // unknown validator passes through
+		{`regex:^\d{5}$`, "12345", true},
+		{`regex:^\d{5}$`, "1234", false},
+		{`regex:^\d{5}$`, "abcde", false},
+		{"regex:hello", "say hello there", true}, // no anchors: plain substring match, as documented
+		{"regex:[", "anything", false},           // invalid pattern fails closed, doesn't panic
 	}
 	for _, c := range cases {
 		t.Run(c.kind+"/"+c.value, func(t *testing.T) {

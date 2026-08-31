@@ -39,6 +39,8 @@ make release-snapshot        # local goreleaser dry run (binaries + Docker image
 
 A `.devcontainer/` is included if you'd rather develop inside a container directly.
 
+Testing your own form against a locally running instance often runs into `allowed_origins` rejecting the origin you're actually testing from (`file://` pages report `Origin: null`; a dev-server port varies) — `allowed_origins: [DANGEROUS_DISABLED]` disables origin/CORS checking entirely for that form, purely for this. Every reload while it's set logs a loud warning naming the form. Development only, never on a real deployment — see [configuration.md](configuration.md#top-level) for the full field reference.
+
 GitHub Actions runs gofmt/vet/build/`-race`-tests (with coverage uploaded to [Codecov](https://codecov.io/gh/bossm8/formelay))/`govulncheck`/`deadcode`/the integration suite (Valkey, email, api)/the CAPTCHA live suite on every push and pull request (`.github/workflows/ci.yml`). The live-provider job is `continue-on-error`: a genuine regression still shows up clearly, but a Cloudflare/hCaptcha outage doesn't block an unrelated PR. `deadcode` blocks the build: unlike the third-party-dependent live suite, an unreachable-code finding is a real regression in our own code.
 
 ## Testing approach

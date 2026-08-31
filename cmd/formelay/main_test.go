@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bossm8/formelay/internal/api"
+	"github.com/bossm8/formelay/internal/app"
 	"github.com/bossm8/formelay/internal/config"
 	"github.com/bossm8/formelay/internal/metrics"
 	"github.com/bossm8/formelay/internal/ratelimit/memory"
@@ -88,6 +91,44 @@ func TestNonZero(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFormsWithOriginCheckDisabled(t *testing.T) {
+	form := func(id string, origins []string) *app.CompiledForm {
+		return &app.CompiledForm{Config: &config.FormConfig{ID: id, AllowedOrigins: origins}}
+	}
+
+	t.Run("no forms use it", func(t *testing.T) {
+		forms := map[string]*app.CompiledForm{
+			"a": form("a", []string{"https://example.com"}),
+			"b": form("b", nil),
+		}
+		if got := formsWithOriginCheckDisabled(forms); len(got) != 0 {
+			t.Fatalf("expected none, got %v", got)
+		}
+	})
+
+	t.Run("one form uses it, alongside a real entry", func(t *testing.T) {
+		forms := map[string]*app.CompiledForm{
+			"a": form("a", []string{"https://example.com", api.DangerousDisableOriginCheck}),
+			"b": form("b", []string{"https://example.com"}),
+		}
+		want := []string{"a"}
+		if got := formsWithOriginCheckDisabled(forms); !reflect.DeepEqual(got, want) {
+			t.Fatalf("formsWithOriginCheckDisabled() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("multiple forms, returned sorted for stable log output", func(t *testing.T) {
+		forms := map[string]*app.CompiledForm{
+			"zeta":  form("zeta", []string{api.DangerousDisableOriginCheck}),
+			"alpha": form("alpha", []string{api.DangerousDisableOriginCheck}),
+		}
+		want := []string{"alpha", "zeta"}
+		if got := formsWithOriginCheckDisabled(forms); !reflect.DeepEqual(got, want) {
+			t.Fatalf("formsWithOriginCheckDisabled() = %v, want %v", got, want)
+		}
+	})
 }
 
 // TestBuildRateLimiterMemoryBackend covers the default/"memory" branch,

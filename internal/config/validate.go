@@ -3,7 +3,15 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 )
+
+// RegexValidatorPrefix marks a fields.validators kind as a custom regex
+// pattern rather than a built-in name — e.g. "regex:^\d{5}$". Exported so
+// internal/api's runValidator (the actual matcher) uses the exact same
+// prefix this package validates the syntax of at config load.
+const RegexValidatorPrefix = "regex:"
 
 // ValidateGlobal performs structural validation of the global config.
 func ValidateGlobal(g *GlobalConfig) error {
@@ -131,7 +139,31 @@ func ValidateForm(f *FormConfig) error {
 		return fmt.Errorf("form %q: channels_required must be 'any', 'all', or 'none'", f.ID)
 	}
 
+	for name, kind := range f.Fields.Validators {
+		if err := validateFieldValidatorKind(kind); err != nil {
+			return fmt.Errorf("form %q: fields.validators[%q]: %w", f.ID, name, err)
+		}
+	}
+
 	return nil
+}
+
+// validateFieldValidatorKind checks kind is one of the built-in validator
+// names, or a syntactically valid "regex:<pattern>" — an unrecognized kind
+// used to silently no-op at runtime (a typo like "emial" validated
+// nothing, with no warning); it's now a config-load error instead.
+func validateFieldValidatorKind(kind string) error {
+	switch kind {
+	case "email", "url", "notblank":
+		return nil
+	}
+	if pattern, ok := strings.CutPrefix(kind, RegexValidatorPrefix); ok {
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("invalid regex: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown validator %q (must be 'email', 'url', 'notblank', or '%s<pattern>')", kind, RegexValidatorPrefix)
 }
 
 func validateSpamAction(field string, action SpamAction, formID string) error {
