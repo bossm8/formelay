@@ -171,15 +171,21 @@ func (c *classifier) Classify(ctx context.Context, data render.SubmissionData) (
 	}
 
 	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
-	firstLine := strings.SplitN(content, "\n", 2)[0]
-	reason := strings.SplitN(content, "\n", 2)[1]
+	lines := strings.SplitN(content, "\n", 2)
+	firstLine := lines[0]
 	m := verdictRE.FindStringSubmatch(strings.TrimSpace(firstLine))
 	if m == nil {
 		return spamfilter.Verdict{}, fmt.Errorf("spamfilter/ai: model response did not match the required VERDICT contract")
 	}
-	r := reasonRE.FindStringSubmatch(strings.TrimSpace(reason))
-	if r != nil {
-		reason = r[1]
+	// The reason line is optional — a well-behaved model may respond with
+	// just the VERDICT line and nothing else, which is a single-element
+	// split, not a contract violation.
+	var reason string
+	if len(lines) > 1 {
+		reason = strings.TrimSpace(lines[1])
+		if r := reasonRE.FindStringSubmatch(reason); r != nil {
+			reason = r[1]
+		}
 	}
 	return spamfilter.Verdict{IsSpam: m[1] == "SPAM", Reason: reason}, nil
 }
