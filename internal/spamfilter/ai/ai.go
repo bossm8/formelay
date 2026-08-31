@@ -30,6 +30,7 @@ var defaultSystemTemplate string
 var defaultUserTemplate string
 
 var verdictRE = regexp.MustCompile(`^VERDICT:\s*(SPAM|NOT_SPAM)\s*$`)
+var reasonRE = regexp.MustCompile(`^REASON:\s*(.*)\s*$`)
 
 // Config is decoded from a form's `spam_filter.provider` block. Prompt
 // template selection is handled separately by TemplateSource, since it comes
@@ -171,9 +172,14 @@ func (c *classifier) Classify(ctx context.Context, data render.SubmissionData) (
 
 	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
 	firstLine := strings.SplitN(content, "\n", 2)[0]
+	reason := strings.SplitN(content, "\n", 2)[1]
 	m := verdictRE.FindStringSubmatch(strings.TrimSpace(firstLine))
 	if m == nil {
 		return spamfilter.Verdict{}, fmt.Errorf("spamfilter/ai: model response did not match the required VERDICT contract")
 	}
-	return spamfilter.Verdict{IsSpam: m[1] == "SPAM", Reason: content}, nil
+	r := reasonRE.FindStringSubmatch(strings.TrimSpace(reason))
+	if r != nil {
+		reason = r[1]
+	}
+	return spamfilter.Verdict{IsSpam: m[1] == "SPAM", Reason: reason}, nil
 }

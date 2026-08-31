@@ -56,6 +56,7 @@ func (l *Logger) Log(e Event, enabled, logFieldValues bool) {
 		return
 	}
 	attrs := []any{
+		"type", "audit",
 		"request_id", e.RequestID,
 		"form_id", e.FormID,
 		"source_ip", e.SourceIP,

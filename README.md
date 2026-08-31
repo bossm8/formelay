@@ -29,8 +29,6 @@ formelay is a lightweight, self-hosted relay for web form submissions. Point a p
 
 The case formelay is built for: a fully static site (a static site generator's output, GitHub Pages, a CDN bucket, whatever) that still needs one genuinely interactive thing, a contact form, a signup box, a support form, without standing up a backend just for that. Point a plain `<form>` on that static site straight at formelay from the browser and it works: real validation, spam defense, and delivery to your inbox or wherever, with no server code of your own anywhere in the picture.
 
-More generally: formelay never stores what people submit, and every part of it (routing rules, spam defenses, delivery channels) lives in a config file next to your other infrastructure, rather than in a third-party dashboard. If you'd rather run this piece of your stack yourself than depend on a hosted form-backend service, this is that option.
-
 ## Features
 
 - **No backend needed.** Point a plain HTML `<form>` straight at formelay from a static site.

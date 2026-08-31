@@ -242,12 +242,7 @@ func (s *Server) finishSubmission(ctx context.Context, p submissionTail) bool {
 		if cerr != nil {
 			slog.Debug("AI spam filter call failed", "request_id", requestID, "form_id", formID, "latency_ms", sfElapsed.Milliseconds(), "error", cerr)
 		} else {
-			// verdict.Reason is free-text derived from submitted content
-			// (the AI's own explanation, which can quote/paraphrase
-			// fields) — deliberately not logged here, same reasoning as
-			// why FieldValues needs logging.audit.log_field_values before
-			// the audit log includes it; is_spam alone is a safe boolean.
-			slog.Debug("AI spam filter verdict", "request_id", requestID, "form_id", formID, "latency_ms", sfElapsed.Milliseconds(), "is_spam", verdict.IsSpam)
+			slog.Debug("AI spam filter verdict", "request_id", requestID, "form_id", formID, "latency_ms", sfElapsed.Milliseconds(), "is_spam", verdict.IsSpam, "reason", verdict.Reason)
 		}
 
 		var trigger string
