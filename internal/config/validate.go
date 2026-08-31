@@ -139,6 +139,12 @@ func ValidateForm(f *FormConfig) error {
 		return fmt.Errorf("form %q: channels_required must be 'any', 'all', or 'none'", f.ID)
 	}
 
+	switch f.ResponseMode {
+	case "", "sync", "async":
+	default:
+		return fmt.Errorf("form %q: response_mode must be 'sync' or 'async'", f.ID)
+	}
+
 	for name, kind := range f.Fields.Validators {
 		if err := validateFieldValidatorKind(kind); err != nil {
 			return fmt.Errorf("form %q: fields.validators[%q]: %w", f.ID, name, err)

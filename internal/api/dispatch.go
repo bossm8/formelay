@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
@@ -24,14 +25,14 @@ const defaultOutboundMaxWait = 5 * time.Second
 
 // dispatchNormal renders each channel's own subject/body templates and
 // sends concurrently.
-func (s *Server) dispatchNormal(ctx context.Context, formID string, channels map[string]*app.CompiledChannel, data render.SubmissionData) []audit.ChannelResult {
+func (s *Server) dispatchNormal(ctx context.Context, requestID, formID string, channels map[string]*app.CompiledChannel, data render.SubmissionData) []audit.ChannelResult {
 	var wg sync.WaitGroup
 	ch := make(chan audit.ChannelResult, len(channels))
 	for id, cc := range channels {
 		wg.Add(1)
 		go func(id string, cc *app.CompiledChannel) {
 			defer wg.Done()
-			ch <- s.sendOne(ctx, formID, id, cc, buildMessage(cc, data))
+			ch <- s.sendOne(ctx, requestID, formID, id, cc, buildMessage(cc, data))
 		}(id, cc)
 	}
 	wg.Wait()
@@ -46,7 +47,7 @@ func (s *Server) dispatchNormal(ctx context.Context, formID string, channels map
 // dispatchShared renders one template once and sends the identical payload
 // to every listed channel — used for spam-review routing, where all target
 // channels share a single review template rather than their own.
-func (s *Server) dispatchShared(ctx context.Context, formID string, cf *app.CompiledForm, channelIDs []string, tmpl *render.Template, data render.SubmissionData) []audit.ChannelResult {
+func (s *Server) dispatchShared(ctx context.Context, requestID, formID string, cf *app.CompiledForm, channelIDs []string, tmpl *render.Template, data render.SubmissionData) []audit.ChannelResult {
 	if tmpl == nil {
 		return nil
 	}
@@ -74,7 +75,7 @@ func (s *Server) dispatchShared(ctx context.Context, formID string, cf *app.Comp
 				Subject: "[Spam review] " + cf.Config.DisplayName,
 				Body:    body, ContentType: "application/json",
 			}
-			ch <- s.sendOne(ctx, formID, id, cc, msg)
+			ch <- s.sendOne(ctx, requestID, formID, id, cc, msg)
 		}(id, cc)
 	}
 	wg.Wait()
@@ -118,8 +119,9 @@ func buildMessage(cc *app.CompiledChannel, data render.SubmissionData) notify.Re
 	return msg
 }
 
-func (s *Server) sendOne(ctx context.Context, formID, channelID string, cc *app.CompiledChannel, msg notify.RenderedMessage) audit.ChannelResult {
+func (s *Server) sendOne(ctx context.Context, requestID, formID, channelID string, cc *app.CompiledChannel, msg notify.RenderedMessage) audit.ChannelResult {
 	if errMsg, ok := msg.Meta["render_error"]; ok {
+		slog.Debug("channel template render failed, not sending", "request_id", requestID, "form_id", formID, "channel", channelID, "error", errMsg)
 		s.Metrics.DeliveriesTotal.WithLabelValues(formID, channelID, cc.Notifier.Type(), "failure").Inc()
 		return audit.ChannelResult{ID: channelID, Type: cc.Notifier.Type(), Success: false, Error: "render: " + errMsg}
 	}
@@ -129,20 +131,26 @@ func (s *Server) sendOne(ctx context.Context, formID, channelID string, cc *app.
 			s.Metrics.RatelimitOutboundWaitSeconds.WithLabelValues(formID, channelID).Observe(waited.Seconds())
 		}
 		if err == nil && !allowed {
+			slog.Debug("channel outbound rate limit exceeded, not sending", "request_id", requestID, "form_id", formID, "channel", channelID, "waited_ms", waited.Milliseconds())
 			s.Metrics.DeliveriesTotal.WithLabelValues(formID, channelID, cc.Notifier.Type(), "rate_limited").Inc()
 			return audit.ChannelResult{ID: channelID, Type: cc.Notifier.Type(), Success: false, Error: "rate_limited: outbound quota exceeded"}
 		}
 		// err != nil (rate-limit backend error): fail open, same convention
 		// handleSubmit already uses for inbound limiting.
 	}
+	slog.Debug("sending to channel", "request_id", requestID, "form_id", formID, "channel", channelID, "type", cc.Notifier.Type())
 	cctx, cancel := context.WithTimeout(ctx, channelSendTimeout)
 	defer cancel()
 	dstart := time.Now()
 	err := cc.Notifier.Send(cctx, msg)
-	s.Metrics.DeliveryLatencySeconds.WithLabelValues(formID, cc.Notifier.Type()).Observe(time.Since(dstart).Seconds())
+	elapsed := time.Since(dstart)
+	s.Metrics.DeliveryLatencySeconds.WithLabelValues(formID, cc.Notifier.Type()).Observe(elapsed.Seconds())
 	status, errStr := "success", ""
 	if err != nil {
 		status, errStr = "failure", err.Error()
+		slog.Debug("channel send failed", "request_id", requestID, "form_id", formID, "channel", channelID, "type", cc.Notifier.Type(), "latency_ms", elapsed.Milliseconds(), "error", errStr)
+	} else {
+		slog.Debug("channel send succeeded", "request_id", requestID, "form_id", formID, "channel", channelID, "type", cc.Notifier.Type(), "latency_ms", elapsed.Milliseconds())
 	}
 	s.Metrics.DeliveriesTotal.WithLabelValues(formID, channelID, cc.Notifier.Type(), status).Inc()
 	return audit.ChannelResult{ID: channelID, Type: cc.Notifier.Type(), Success: err == nil, Error: errStr}

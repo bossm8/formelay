@@ -123,7 +123,7 @@ func TestDispatchSharedMissingChannelRecordsFailure(t *testing.T) {
 		Channels: map[string]*app.CompiledChannel{}, // "ghost" intentionally absent
 	}
 
-	results := s.dispatchShared(context.Background(), "contact", cf, []string{"ghost"}, tmpl, render.SubmissionData{})
+	results := s.dispatchShared(context.Background(), "test-request-id", "contact", cf, []string{"ghost"}, tmpl, render.SubmissionData{})
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d: %+v", len(results), results)
@@ -277,7 +277,7 @@ func TestSendOneSkipsRateLimitEntirelyWhenUnset(t *testing.T) {
 		Metrics:     metrics.New("test", "test", "test"),
 	}
 	cc := &app.CompiledChannel{Notifier: &stubNotifierNoReplyTo{}} // RateLimit left nil
-	result := s.sendOne(context.Background(), "contact", "email-owner", cc, notify.RenderedMessage{})
+	result := s.sendOne(context.Background(), "test-request-id", "contact", "email-owner", cc, notify.RenderedMessage{})
 	if !result.Success {
 		t.Fatalf("expected success, got %+v", result)
 	}
@@ -291,7 +291,7 @@ func TestSendOneRecordsRateLimited(t *testing.T) {
 		Metrics:     metrics.New("test", "test", "test"),
 	}
 	cc := &app.CompiledChannel{Notifier: &stubNotifierNoReplyTo{}, RateLimit: rl}
-	result := s.sendOne(context.Background(), "contact", "email-owner", cc, notify.RenderedMessage{})
+	result := s.sendOne(context.Background(), "test-request-id", "contact", "email-owner", cc, notify.RenderedMessage{})
 	if result.Success {
 		t.Fatal("expected failure")
 	}

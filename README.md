@@ -37,6 +37,7 @@ More generally: formelay never stores what people submit, and every part of it (
 - **Multi-channel delivery.** Email, Discord, and generic webhooks out of the box.
 - **Layered spam defense.** Honeypot, CAPTCHA (Turnstile/hCaptcha/reCAPTCHA-compatible), and an AI content classifier - all optional.
 - **Per-channel templates.** All can be configured independently.
+- **Configurable response timing.** `response_mode: sync` (default) waits for delivery before responding; `async` responds as soon as CAPTCHA passes and finishes spam filtering + delivery in the background, per form.
 - **Hot-reloadable config.** YAML changes apply live (fsnotify or `SIGHUP`), atomically, with rollback on invalid config.
 - **Pluggable rate limiting, inbound and outbound.** In-memory by default, or Valkey to share limits across replicas — including per-channel outbound limits, so a submission burst can't blow through a mail provider's or webhook's sending quota.
 - **Built-in observability.** Prometheus metrics and `/healthz`/`/readyz` on a separate listener.

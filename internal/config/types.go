@@ -113,18 +113,28 @@ type HealthConfig struct {
 
 // FormConfig is one forms.d/<slug>.yaml file.
 type FormConfig struct {
-	ID               string             `yaml:"id"`
-	DisplayName      string             `yaml:"display_name"`
-	Enabled          *bool              `yaml:"enabled"`
-	AllowedOrigins   []string           `yaml:"allowed_origins"`
-	Auth             AuthConfig         `yaml:"auth"`
-	Honeypot         HoneypotConfig     `yaml:"honeypot"`
-	Captcha          CaptchaConfig      `yaml:"captcha"`
-	SpamFilter       SpamFilterConfig   `yaml:"spam_filter"`
-	RateLimit        *RateLimitOverride `yaml:"rate_limit"`
-	Fields           FieldsConfig       `yaml:"fields"`
-	Channels         []ChannelConfig    `yaml:"channels"`
-	ChannelsRequired string             `yaml:"channels_required"` // any | all | none
+	ID             string             `yaml:"id"`
+	DisplayName    string             `yaml:"display_name"`
+	Enabled        *bool              `yaml:"enabled"`
+	AllowedOrigins []string           `yaml:"allowed_origins"`
+	Auth           AuthConfig         `yaml:"auth"`
+	Honeypot       HoneypotConfig     `yaml:"honeypot"`
+	Captcha        CaptchaConfig      `yaml:"captcha"`
+	SpamFilter     SpamFilterConfig   `yaml:"spam_filter"`
+	RateLimit      *RateLimitOverride `yaml:"rate_limit"`
+	Fields         FieldsConfig       `yaml:"fields"`
+	Channels       []ChannelConfig    `yaml:"channels"`
+	// ChannelsRequired only affects the HTTP response in response_mode:
+	// sync (the default) — in async mode the response is already sent
+	// before dispatch runs, so this still governs the eventual audit/
+	// metrics outcome but can no longer change what the client saw.
+	ChannelsRequired string `yaml:"channels_required"` // any | all | none
+	// ResponseMode controls whether the HTTP response waits for the AI
+	// spam filter + delivery to actually finish ("sync", the default) or
+	// returns immediately after CAPTCHA passes, running both in the
+	// background ("async"). CAPTCHA itself is always synchronous in
+	// either mode.
+	ResponseMode string `yaml:"response_mode"` // sync | async
 }
 
 func (f *FormConfig) IsEnabled() bool {

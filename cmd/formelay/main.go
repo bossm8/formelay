@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -158,6 +159,15 @@ func runServe(args []string) {
 
 	trustedProxies := api.ParseTrustedProxies(global.Server.TrustedProxies)
 
+	// Backs response_mode: async — deliberately not derived from the
+	// shutdown-signal ctx below (that one is cancelled the instant a
+	// signal arrives), so an in-flight background dispatch gets the full
+	// shutdown grace period to finish rather than being killed instantly.
+	// See the shutdown sequence at the bottom of this function.
+	bgCtx, cancelBackground := context.WithCancel(context.Background())
+	defer cancelBackground()
+	var bgWG sync.WaitGroup
+
 	server := &api.Server{
 		App:            a,
 		RateLimiter:    rl,
@@ -165,6 +175,8 @@ func runServe(args []string) {
 		Metrics:        m,
 		IDGen:          func() string { return ulid.Make().String() },
 		TrustedProxies: trustedProxies,
+		BackgroundCtx:  bgCtx,
+		BackgroundWG:   &bgWG,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -230,6 +242,26 @@ func runServe(args []string) {
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
 	_ = internalServer.Shutdown(shutdownCtx)
+	waitForBackgroundDispatches(shutdownCtx, log, &bgWG)
+	cancelBackground()
+}
+
+// waitForBackgroundDispatches blocks until every response_mode: async
+// dispatch spawned via api.Server.BackgroundWG has finished, or shutdownCtx
+// expires (the same server.shutdown_grace_period budget that already
+// governs httpServer.Shutdown above) — whichever comes first. A no-op,
+// returning immediately, if no form ever used response_mode: async.
+func waitForBackgroundDispatches(shutdownCtx context.Context, log *slog.Logger, wg *sync.WaitGroup) {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-shutdownCtx.Done():
+		log.Warn("shutdown grace period elapsed with response_mode: async dispatches still in flight; exiting anyway")
+	}
 }
 
 // buildLogger applies logging.level/logging.format to the general

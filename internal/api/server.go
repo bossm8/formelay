@@ -3,8 +3,10 @@
 package api
 
 import (
+	"context"
 	"net"
 	"net/http"
+	"sync"
 
 	"github.com/bossm8/formelay/internal/app"
 	"github.com/bossm8/formelay/internal/audit"
@@ -19,6 +21,14 @@ type Server struct {
 	Metrics        *metrics.Metrics
 	IDGen          func() string
 	TrustedProxies []*net.IPNet
+	// BackgroundCtx and BackgroundWG back response_mode: async — a
+	// server-lifetime context (not r.Context(), which net/http cancels
+	// the instant handleSubmit returns) and a WaitGroup so
+	// cmd/formelay/main.go's shutdown sequence can drain in-flight
+	// background dispatches before the process exits. Harmless/unused
+	// when no form ever sets response_mode: async.
+	BackgroundCtx context.Context
+	BackgroundWG  *sync.WaitGroup
 }
 
 // NewMux builds the public-facing mux: the submission endpoint only.

@@ -31,6 +31,12 @@ rate_limit:
   per_ip: {rate: 2, window: 1m, burst: 2}
   per_form: {rate: 100, window: 1m, burst: 20}
 
+# Posted via fetch() straight from the page (see docs/examples.md) — no
+# reason to make a visitor wait on the Discord webhook round-trip just to
+# see "Subscribed!". CAPTCHA (not used by this form) would still be
+# synchronous either way.
+response_mode: async
+
 channels_required: any
 
 channels:

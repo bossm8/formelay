@@ -183,6 +183,36 @@ func TestValidateForm(t *testing.T) {
 		}
 	})
 
+	t.Run("response_mode unset defaults fine", func(t *testing.T) {
+		if err := ValidateForm(base()); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("response_mode sync accepted", func(t *testing.T) {
+		f := base()
+		f.ResponseMode = "sync"
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("response_mode async accepted", func(t *testing.T) {
+		f := base()
+		f.ResponseMode = "async"
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("invalid response_mode rejected", func(t *testing.T) {
+		f := base()
+		f.ResponseMode = "eventually"
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for invalid response_mode")
+		}
+	})
+
 	t.Run("on_spam route requires spam_template", func(t *testing.T) {
 		f := base()
 		f.SpamFilter.Enabled = true

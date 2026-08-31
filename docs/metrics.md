@@ -8,7 +8,7 @@ Every metric below is on a dedicated registry (`internal/metrics`), populated at
 
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
-| `formelay_submissions_total` | counter | `form`, `status` | One increment per submission attempt. `status` is one of `success`, `validation_failed`, `origin_denied`, `auth_denied`, `rate_limited`, `spam_dropped_honeypot`, `captcha_failed`, `spam_dropped_ai`, `delivery_failed` — the same vocabulary as the audit log's `status` field. |
+| `formelay_submissions_total` | counter | `form`, `status` | One increment per submission attempt. `status` is one of `success`, `validation_failed`, `origin_denied`, `auth_denied`, `rate_limited`, `spam_dropped_honeypot`, `captcha_failed`, `spam_dropped_ai`, `delivery_failed` — the same vocabulary as the audit log's `status` field. For a `response_mode: async` form (see [configuration.md](configuration.md#top-level)), this is recorded once the background spam-filter/dispatch work actually finishes, not when the (already-sent) HTTP response went out — so `success` here still means genuinely delivered, even though the client found out sooner. |
 | `formelay_deliveries_total` | counter | `form`, `channel`, `channel_type`, `status` | One increment per channel delivery attempt. `channel` is the form's own `channels[].id`; `channel_type` is `email`\|`discord`\|`webhook`; `status` is `success`\|`failure`\|`rate_limited` (this channel's own `rate_limit` — see [configuration.md](configuration.md#rate_limit-optional) — rejected or timed out waiting for capacity; distinct from an actual send failure). |
 | `formelay_delivery_latency_seconds` | histogram | `form`, `channel_type` | Time spent in one channel's `Notifier.Send`, including template rendering. |
 
@@ -43,6 +43,7 @@ Every metric below is on a dedicated registry (`internal/metrics`), populated at
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
 | `formelay_http_requests_in_flight` | gauge | — | Requests currently being handled on the **public** submission listener only (`/f/{formID}/submit`); the internal health/metrics listener isn't instrumented. |
+| `formelay_background_dispatches_in_flight` | gauge | — | `response_mode: async` submissions whose AI spam-filter call and delivery are still running in the background, after the HTTP response has already been sent. Stays `0` for any deployment with no `async`-mode form. A sustained climb here means dispatches are piling up faster than they're draining — e.g. a slow or down SMTP/webhook destination. |
 | `formelay_build_info` | gauge | `version`, `commit`, `go_version` | Always `1`; join against other series to break them down by build. |
 
 `internal/metrics` also registers the standard Go and process collectors from `prometheus/client_golang/prometheus/collectors` (`go_*`, `process_*`: goroutine count, GC stats, memory, open file descriptors, and so on) — the usual Prometheus Go-runtime metrics, not enumerated individually here.

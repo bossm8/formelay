@@ -55,7 +55,7 @@ curl -i -X POST http://localhost:8080/f/contact/submit \
 
 ## 2. Newsletter signup — minimal, high-abuse-risk
 
-One field, posted from JS, routed straight to a Discord channel your marketing team watches — no email round-trip needed for something this lightweight. Tighter rate limits and a different honeypot field name (`company` reads naturally on a signup box) than the contact form, since public signup boxes attract more automated abuse per real visitor than a form someone deliberately fills in.
+One field, posted from JS, routed straight to a Discord channel your marketing team watches — no email round-trip needed for something this lightweight. Tighter rate limits and a different honeypot field name (`company` reads naturally on a signup box) than the contact form, since public signup boxes attract more automated abuse per real visitor than a form someone deliberately fills in. Also the one example using `response_mode: async` (see [configuration.md](configuration.md#top-level)): a visitor doesn't need to wait on the Discord webhook round-trip to see "Subscribed!"
 
 **Config**: [`config.example/forms.d/newsletter.yaml`](../config.example/forms.d/newsletter.yaml)
 **Template**: [`newsletter-discord.tmpl`](../config.example/templates/newsletter-discord.tmpl)

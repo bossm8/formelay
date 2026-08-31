@@ -26,6 +26,7 @@ type Metrics struct {
 	RatelimitBackendErrorsTotal  *prometheus.CounterVec
 	RatelimitOutboundWaitSeconds *prometheus.HistogramVec
 	HTTPRequestsInFlight         prometheus.Gauge
+	BackgroundDispatchesInFlight prometheus.Gauge
 	BuildInfo                    *prometheus.GaugeVec
 }
 
@@ -83,6 +84,9 @@ func New(version, commit, goVersion string) *Metrics {
 		HTTPRequestsInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "formelay_http_requests_in_flight", Help: "In-flight HTTP requests.",
 		}),
+		BackgroundDispatchesInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "formelay_background_dispatches_in_flight", Help: "response_mode: async submissions whose spam-filter/dispatch is still running in the background.",
+		}),
 		BuildInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "formelay_build_info", Help: "Build metadata.",
 		}, []string{"version", "commit", "go_version"}),
@@ -93,7 +97,7 @@ func New(version, commit, goVersion string) *Metrics {
 		m.HoneypotTriggeredTotal, m.CaptchaVerificationsTotal, m.SpamFilterVerdictsTotal,
 		m.SpamFilterActionsTotal, m.SpamFilterLatencySeconds, m.ConfigReloadTotal,
 		m.ConfigLastReloadTimestamp, m.RatelimitBucketsActive, m.RatelimitBackendErrorsTotal,
-		m.RatelimitOutboundWaitSeconds, m.HTTPRequestsInFlight, m.BuildInfo,
+		m.RatelimitOutboundWaitSeconds, m.HTTPRequestsInFlight, m.BackgroundDispatchesInFlight, m.BuildInfo,
 	)
 	m.BuildInfo.WithLabelValues(version, commit, goVersion).Set(1)
 	return m

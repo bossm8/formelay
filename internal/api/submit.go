@@ -1,9 +1,12 @@
 package api
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/bossm8/formelay/internal/app"
 	"github.com/bossm8/formelay/internal/audit"
 	"github.com/bossm8/formelay/internal/config"
 	"github.com/bossm8/formelay/internal/honeypot"
@@ -23,6 +26,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	formID := r.PathValue("formID")
 	ip := clientIP(r, s.TrustedProxies)
 	origin := r.Header.Get("Origin")
+	slog.Debug("submission received", "request_id", requestID, "form_id", formID, "source_ip", ip, "origin", origin)
 
 	rt := s.App.Current()
 	if rt == nil {
@@ -97,6 +101,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	// 3. decode
 	multi, err := decodeSubmission(w, r, global.Security.MaxBodyBytes)
 	if err != nil {
+		slog.Debug("request body decode failed", "request_id", requestID, "form_id", formID, "error", err)
 		finish("validation_failed", "invalid_body", http.StatusBadRequest)
 		return
 	}
@@ -111,10 +116,12 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	// 5. sanitize + validate
 	fields, err = sanitizeFields(fields, fc.Fields)
 	if err != nil {
+		slog.Debug("field sanitization failed", "request_id", requestID, "form_id", formID, "error", err)
 		finish("validation_failed", "invalid_field_encoding", http.StatusBadRequest)
 		return
 	}
 	if failed := validateFields(fields, fc.Fields); len(failed) > 0 {
+		slog.Debug("field validation failed", "request_id", requestID, "form_id", formID, "fields", failed)
 		finish("validation_failed", "validation_failed", http.StatusBadRequest)
 		return
 	}
@@ -138,6 +145,9 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	// 7. captcha
 	if fc.Captcha.Enabled && cf.CaptchaVerifier != nil {
 		token := fields[fc.Captcha.ResponseField]
+		if token == "" {
+			slog.Debug("captcha response token missing from submission", "request_id", requestID, "form_id", formID, "response_field", fc.Captcha.ResponseField)
+		}
 		passed, verr := cf.CaptchaVerifier.Verify(ctx, token, ip)
 		status := "success"
 		if verr != nil {
@@ -147,8 +157,10 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 				onError = "fail_closed"
 			}
 			passed = onError == "fail_open"
+			slog.Debug("captcha verify errored", "request_id", requestID, "form_id", formID, "provider", fc.Captcha.Provider, "on_error", onError, "error", verr)
 		} else if !passed {
 			status = "failed"
+			slog.Debug("captcha verify failed", "request_id", requestID, "form_id", formID, "provider", fc.Captcha.Provider)
 		}
 		s.Metrics.CaptchaVerificationsTotal.WithLabelValues(formID, fc.Captcha.Provider, status).Inc()
 		if !passed {
@@ -156,6 +168,62 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// 8-9. AI spam filter + render/dispatch. response_mode: async runs
+	// this in the background and responds immediately; sync (the
+	// default) runs it inline and responds based on the real outcome,
+	// exactly as before response_mode existed.
+	p := submissionTail{requestID: requestID, formID: formID, ip: ip, origin: origin, start: start, fc: fc, cf: cf, data: data, fields: fields, global: global}
+	if fc.ResponseMode == "async" {
+		s.Metrics.BackgroundDispatchesInFlight.Inc()
+		s.BackgroundWG.Add(1)
+		go func() {
+			defer s.BackgroundWG.Done()
+			defer s.Metrics.BackgroundDispatchesInFlight.Dec()
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Error("background dispatch panicked", "request_id", requestID, "form_id", formID, "panic", rec)
+				}
+			}()
+			s.finishSubmission(s.BackgroundCtx, p)
+		}()
+		respondSuccess(w, requestID)
+		return
+	}
+
+	if s.finishSubmission(ctx, p) {
+		respondSuccess(w, requestID)
+	} else {
+		respondError(w, http.StatusBadGateway, "delivery_failed", requestID)
+	}
+}
+
+// submissionTail bundles what finishSubmission needs — everything already
+// computed synchronously by the time CAPTCHA passes. A struct, not
+// individual params, since response_mode: async captures it in a closure
+// that outlives handleSubmit's own stack frame.
+type submissionTail struct {
+	requestID, formID, ip, origin string
+	start                         time.Time
+	fc                            *config.FormConfig
+	cf                            *app.CompiledForm
+	data                          render.SubmissionData
+	fields                        map[string]string
+	global                        *config.GlobalConfig
+}
+
+// finishSubmission runs the AI spam filter, then render/dispatch, then
+// logs the final audit event and metric — steps 8-9 of the pipeline,
+// unchanged in logic from before response_mode existed, just extracted so
+// both response_mode: sync (called inline) and async (called from a
+// background goroutine) share one implementation. Returns whether the
+// outcome counts as success for the HTTP response — true for everything
+// except a genuine delivery_failed, matching today's behavior exactly
+// (spam_dropped_ai and a routed-with-no-channels verdict already respond
+// success, deliberately, so this still reports true for those).
+func (s *Server) finishSubmission(ctx context.Context, p submissionTail) bool {
+	requestID, formID, ip, origin, start := p.requestID, p.formID, p.ip, p.origin, p.start
+	fc, cf, data, fields, global := p.fc, p.cf, p.data, p.fields, p.global
 
 	// 8. AI spam filter
 	targetChannels := cf.Channels
@@ -169,7 +237,18 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		classifyData := data.WithFieldsLimitedTo(fc.SpamFilter.IncludeFields)
 		sfStart := time.Now()
 		verdict, cerr := cf.SpamClassifier.Classify(ctx, classifyData)
-		s.Metrics.SpamFilterLatencySeconds.WithLabelValues(formID).Observe(time.Since(sfStart).Seconds())
+		sfElapsed := time.Since(sfStart)
+		s.Metrics.SpamFilterLatencySeconds.WithLabelValues(formID).Observe(sfElapsed.Seconds())
+		if cerr != nil {
+			slog.Debug("AI spam filter call failed", "request_id", requestID, "form_id", formID, "latency_ms", sfElapsed.Milliseconds(), "error", cerr)
+		} else {
+			// verdict.Reason is free-text derived from submitted content
+			// (the AI's own explanation, which can quote/paraphrase
+			// fields) — deliberately not logged here, same reasoning as
+			// why FieldValues needs logging.audit.log_field_values before
+			// the audit log includes it; is_spam alone is a safe boolean.
+			slog.Debug("AI spam filter verdict", "request_id", requestID, "form_id", formID, "latency_ms", sfElapsed.Milliseconds(), "is_spam", verdict.IsSpam)
+		}
 
 		var trigger string
 		var action config.SpamAction
@@ -199,8 +278,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 				status := "spam_dropped_ai"
 				s.Metrics.SubmissionsTotal.WithLabelValues(formID, status).Inc()
 				s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, SpamVerdict: trigger, SpamAction: string(action), Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
-				respondSuccess(w, requestID)
-				return
+				return true
 			case config.SpamActionRoute:
 				data.Meta.SpamSuspected = true
 				routeChannelIDs = fc.SpamFilter.Route.SpamChannels
@@ -213,8 +291,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 					status := "spam_dropped_ai"
 					s.Metrics.SubmissionsTotal.WithLabelValues(formID, status).Inc()
 					s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, SpamVerdict: trigger, SpamAction: string(action), Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
-					respondSuccess(w, requestID)
-					return
+					return true
 				}
 				sharedTemplate = cf.SpamRouteTemplates[templateKey]
 				targetChannels = nil
@@ -229,16 +306,16 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	// 9. render + dispatch
 	var results []audit.ChannelResult
 	if sharedTemplate != nil {
-		results = s.dispatchShared(ctx, formID, cf, routeChannelIDs, sharedTemplate, data)
+		results = s.dispatchShared(ctx, requestID, formID, cf, routeChannelIDs, sharedTemplate, data)
 	} else {
-		results = s.dispatchNormal(ctx, formID, targetChannels, data)
+		results = s.dispatchNormal(ctx, requestID, formID, targetChannels, data)
 	}
 
 	required := fc.ChannelsRequired
 	if required == "" {
 		required = "any"
 	}
-	ok = true
+	ok := true
 	switch required {
 	case "all":
 		ok = allSuccess(results)
@@ -255,9 +332,5 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	s.Metrics.SubmissionsTotal.WithLabelValues(formID, status).Inc()
 	s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, Channels: results, Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
 
-	if ok {
-		respondSuccess(w, requestID)
-	} else {
-		respondError(w, http.StatusBadGateway, "delivery_failed", requestID)
-	}
+	return ok
 }

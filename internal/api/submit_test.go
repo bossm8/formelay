@@ -16,6 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
+
 	"github.com/bossm8/formelay/internal/app"
 	"github.com/bossm8/formelay/internal/audit"
 	"github.com/bossm8/formelay/internal/captcha"
@@ -81,12 +84,15 @@ rate_limit:
 	}
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	var bgWG sync.WaitGroup
 	return &Server{
-		App:         a,
-		RateLimiter: &fakeRateLimiter{},
-		Audit:       audit.New(log),
-		Metrics:     metrics.New("test", "test", "test"),
-		IDGen:       func() string { return "test-request-id" },
+		App:           a,
+		RateLimiter:   &fakeRateLimiter{},
+		Audit:         audit.New(log),
+		Metrics:       metrics.New("test", "test", "test"),
+		IDGen:         func() string { return "test-request-id" },
+		BackgroundCtx: context.Background(),
+		BackgroundWG:  &bgWG,
 	}, dir
 }
 
@@ -335,6 +341,130 @@ channels:
 	if !equalStringMaps(delivered, want) {
 		t.Fatalf("delivered payload = %v, want %v (delivery must not be filtered by include_fields)", delivered, want)
 	}
+}
+
+// TestSubmit_ResponseModeAsync proves response_mode: async genuinely
+// doesn't wait for dispatch: the webhook receiver blocks until explicitly
+// released, so if handleSubmit responded before that release, the
+// response itself is direct proof it didn't wait for delivery — not just
+// "happened to be fast." s.BackgroundWG.Wait() afterward proves the
+// deferred work still genuinely completed, just later.
+func TestSubmit_ResponseModeAsync(t *testing.T) {
+	release := make(chan struct{})
+	var deliveredBody []byte
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release // held open until the test explicitly lets it through
+		deliveredBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookSrv.Close()
+
+	os.Setenv("TEST_DISCORD_WEBHOOK_ASYNC", webhookSrv.URL)
+	t.Cleanup(func() { os.Unsetenv("TEST_DISCORD_WEBHOOK_ASYNC") })
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.yaml"), `
+server:
+  listen_addr: "127.0.0.1:0"
+forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+templates_dir: "`+filepath.Join(dir, "templates")+`"
+security:
+  max_body_bytes: 65536
+rate_limit:
+  backend: memory
+  default:
+    per_ip: {rate: 100, window: 1m, burst: 100}
+    per_form: {rate: 100, window: 1m, burst: 100}
+    global: {rate: 1000, window: 1m, burst: 1000}
+`)
+	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+id: contact
+allowed_origins: ["https://example.com"]
+auth:
+  site_key: "the-key"
+fields:
+  required: ["name"]
+response_mode: async
+channels:
+  - id: discord-alerts
+    type: discord
+    config:
+      webhook_url_env: "TEST_DISCORD_WEBHOOK_ASYNC"
+      template: "body.tmpl"
+`)
+	writeFile(t, filepath.Join(dir, "templates", "body.tmpl"), `{"name": {{ .Fields.name | json }}}`)
+
+	registries := app.Registries{
+		Notify:     notify.NewRegistry(),
+		Captcha:    captcha.NewRegistry(),
+		SpamFilter: spamfilter.NewRegistry(),
+	}
+	registries.Notify.Register(discord.Type, discord.New)
+
+	a := app.New(filepath.Join(dir, "config.yaml"), registries)
+	if err := a.Reload(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	var bgWG sync.WaitGroup
+	s := &Server{
+		App:           a,
+		RateLimiter:   &fakeRateLimiter{},
+		Audit:         audit.New(log),
+		Metrics:       metrics.New("test", "test", "test"),
+		IDGen:         func() string { return "test-request-id" },
+		BackgroundCtx: context.Background(),
+		BackgroundWG:  &bgWG,
+	}
+
+	form := url.Values{"name": {"Alice"}}
+	rec := doSubmit(t, s, "contact", form, map[string]string{"X-Formelay-Site-Key": "the-key"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 immediately (before the blocked webhook is released), got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body response
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !body.Success {
+		t.Fatalf("expected success=true even though dispatch hasn't run yet")
+	}
+
+	if got := gaugeValue(t, s.Metrics.BackgroundDispatchesInFlight); got != 1 {
+		t.Fatalf("formelay_background_dispatches_in_flight = %v, want 1 while the dispatch is still blocked", got)
+	}
+
+	close(release)
+	s.BackgroundWG.Wait()
+
+	if deliveredBody == nil {
+		t.Fatal("expected the background dispatch to have actually delivered after release")
+	}
+	var delivered map[string]string
+	if err := json.Unmarshal(deliveredBody, &delivered); err != nil {
+		t.Fatalf("decode delivered webhook body: %v (body: %s)", err, deliveredBody)
+	}
+	if delivered["name"] != "Alice" {
+		t.Fatalf("delivered payload = %v, want name=Alice", delivered)
+	}
+	if got := gaugeValue(t, s.Metrics.BackgroundDispatchesInFlight); got != 0 {
+		t.Fatalf("formelay_background_dispatches_in_flight = %v, want 0 once the dispatch has finished", got)
+	}
+}
+
+// gaugeValue reads a Gauge's current value directly via its Write method
+// (part of client_golang's core prometheus.Metric interface — already a
+// direct dependency), rather than pulling in the separate
+// prometheus/client_golang/prometheus/testutil subpackage (which drags in
+// github.com/kylelemons/godebug as a new transitive dependency) just for
+// one value read.
+func gaugeValue(t *testing.T, g prometheus.Gauge) float64 {
+	t.Helper()
+	var m dto.Metric
+	if err := g.Write(&m); err != nil {
+		t.Fatalf("read gauge: %v", err)
+	}
+	return m.GetGauge().GetValue()
 }
 
 func equalStringMaps(a, b map[string]string) bool {
