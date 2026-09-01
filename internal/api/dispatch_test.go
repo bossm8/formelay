@@ -182,18 +182,18 @@ func (f *sequencedRateLimiter) Allow(context.Context, string, float64, float64, 
 	return r, nil
 }
 
-func rateLimitedChannel(t *testing.T) *config.ChannelRateLimitConfig {
+func testOutboundRateLimit(t *testing.T) *config.OutboundRateLimitConfig {
 	t.Helper()
-	return &config.ChannelRateLimitConfig{Rate: 1, Window: yamlutil.Duration(time.Minute), Burst: 1}
+	return &config.OutboundRateLimitConfig{Rate: 1, Window: yamlutil.Duration(time.Minute), Burst: 1}
 }
 
 func TestAwaitOutboundTokenOnLimitFail(t *testing.T) {
-	rl := rateLimitedChannel(t)
+	rl := testOutboundRateLimit(t)
 	rl.OnLimit = "fail"
 	fake := &sequencedRateLimiter{results: []bool{false}}
 	s := &Server{RateLimiter: fake}
 
-	waited, allowed, err := s.awaitOutboundToken(context.Background(), "contact", "email-owner", rl)
+	waited, allowed, err := s.awaitOutboundToken(context.Background(), "contact:email-owner", rl)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -213,13 +213,13 @@ func TestAwaitOutboundTokenWaitEventuallyAllowed(t *testing.T) {
 	outboundPollInterval = time.Millisecond
 	t.Cleanup(func() { outboundPollInterval = orig })
 
-	rl := rateLimitedChannel(t)
+	rl := testOutboundRateLimit(t)
 	rl.OnLimit = "wait"
 	rl.MaxWait = yamlutil.Duration(time.Second)
 	fake := &sequencedRateLimiter{results: []bool{false, false, true}}
 	s := &Server{RateLimiter: fake}
 
-	waited, allowed, err := s.awaitOutboundToken(context.Background(), "contact", "email-owner", rl)
+	waited, allowed, err := s.awaitOutboundToken(context.Background(), "contact:email-owner", rl)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -239,13 +239,13 @@ func TestAwaitOutboundTokenWaitTimesOut(t *testing.T) {
 	outboundPollInterval = time.Millisecond
 	t.Cleanup(func() { outboundPollInterval = orig })
 
-	rl := rateLimitedChannel(t)
+	rl := testOutboundRateLimit(t)
 	rl.OnLimit = "wait"
 	rl.MaxWait = yamlutil.Duration(5 * time.Millisecond)
 	fake := &sequencedRateLimiter{results: []bool{false}} // always denies
 	s := &Server{RateLimiter: fake}
 
-	waited, allowed, err := s.awaitOutboundToken(context.Background(), "contact", "email-owner", rl)
+	waited, allowed, err := s.awaitOutboundToken(context.Background(), "contact:email-owner", rl)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -258,11 +258,11 @@ func TestAwaitOutboundTokenWaitTimesOut(t *testing.T) {
 }
 
 func TestAwaitOutboundTokenBackendErrorFailsOpen(t *testing.T) {
-	rl := rateLimitedChannel(t)
+	rl := testOutboundRateLimit(t)
 	fake := &sequencedRateLimiter{err: errors.New("backend unreachable")}
 	s := &Server{RateLimiter: fake}
 
-	_, _, err := s.awaitOutboundToken(context.Background(), "contact", "email-owner", rl)
+	_, _, err := s.awaitOutboundToken(context.Background(), "contact:email-owner", rl)
 	if err == nil {
 		t.Fatal("expected the backend error to be returned, not swallowed")
 	}
@@ -284,7 +284,7 @@ func TestSendOneSkipsRateLimitEntirelyWhenUnset(t *testing.T) {
 }
 
 func TestSendOneRecordsRateLimited(t *testing.T) {
-	rl := rateLimitedChannel(t)
+	rl := testOutboundRateLimit(t)
 	rl.OnLimit = "fail"
 	s := &Server{
 		RateLimiter: &sequencedRateLimiter{results: []bool{false}},

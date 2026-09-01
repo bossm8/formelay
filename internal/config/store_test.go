@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeValidGlobal(t *testing.T, dir string) string {
@@ -83,6 +84,119 @@ server:
 		}
 		if !strings.Contains(err.Error(), `validate form "contact"`) {
 			t.Fatalf("expected error to name the failing form id, got: %v", err)
+		}
+	})
+
+	t.Run("a shared_key referencing an undefined outbound bucket fails Load", func(t *testing.T) {
+		dir := t.TempDir()
+		path := writeValidGlobal(t, dir)
+		writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+id: contact
+auth:
+  site_key: k
+channels:
+  - id: ch1
+    type: webhook
+    rate_limit:
+      shared_key: "not-defined-anywhere"
+    config:
+      url: "https://example.invalid/hook"
+`)
+		_, err := Load(path)
+		if err == nil {
+			t.Fatal("expected error for a shared_key with no matching rate_limit.outbound_buckets entry")
+		}
+		if !strings.Contains(err.Error(), `shared_key "not-defined-anywhere"`) {
+			t.Fatalf("expected error to name the missing shared_key, got: %v", err)
+		}
+	})
+
+	t.Run("a valid shared_key reference resolves onto the block from the global bucket", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.yaml")
+		writeFile(t, path, `
+server:
+  listen_addr: "0.0.0.0:8080"
+forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+templates_dir: "`+filepath.Join(dir, "templates")+`"
+rate_limit:
+  outbound_buckets:
+    primary-smtp:
+      rate: 10
+      window: 1m
+      burst: 10
+      on_limit: fail
+`)
+		writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+id: contact
+auth:
+  site_key: k
+channels:
+  - id: ch1
+    type: webhook
+    rate_limit:
+      shared_key: "primary-smtp"
+    config:
+      url: "https://example.invalid/hook"
+`)
+		snap, err := Load(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		rl := snap.Forms["contact"].Channels[0].RateLimit
+		if rl == nil {
+			t.Fatal("expected ch1.rate_limit to be populated")
+		}
+		if rl.Rate != 10 || rl.Burst != 10 || rl.Window.Std() != time.Minute || rl.OnLimit != "fail" {
+			t.Fatalf("expected shared_key to resolve to the bucket's numbers, got %+v", rl)
+		}
+	})
+
+	t.Run("two blocks sharing one key resolve to identical numbers, not whichever one happened to run last", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.yaml")
+		writeFile(t, path, `
+server:
+  listen_addr: "0.0.0.0:8080"
+forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+templates_dir: "`+filepath.Join(dir, "templates")+`"
+rate_limit:
+  outbound_buckets:
+    primary-smtp:
+      rate: 7
+      window: 1m
+      burst: 3
+      on_limit: wait
+      max_wait: 2s
+`)
+		writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+id: contact
+auth:
+  site_key: k
+channels:
+  - id: ch1
+    type: webhook
+    rate_limit:
+      shared_key: "primary-smtp"
+    config:
+      url: "https://example.invalid/hook"
+  - id: ch2
+    type: webhook
+    rate_limit:
+      shared_key: "primary-smtp"
+    config:
+      url: "https://example.invalid/hook"
+`)
+		snap, err := Load(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		rl1, rl2 := snap.Forms["contact"].Channels[0].RateLimit, snap.Forms["contact"].Channels[1].RateLimit
+		if *rl1 != *rl2 {
+			t.Fatalf("expected both blocks sharing one key to resolve identically, got ch1=%+v ch2=%+v", rl1, rl2)
+		}
+		if rl1.Rate != 7 || rl1.Burst != 3 || rl1.OnLimit != "wait" || rl1.MaxWait.Std() != 2*time.Second {
+			t.Fatalf("unexpected resolved values: %+v", rl1)
 		}
 	})
 }

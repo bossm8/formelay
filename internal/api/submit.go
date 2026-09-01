@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/bossm8/formelay/internal/config"
 	"github.com/bossm8/formelay/internal/honeypot"
 	"github.com/bossm8/formelay/internal/render"
+	"github.com/bossm8/formelay/internal/spamfilter"
 )
 
 // handleSubmit implements the submission pipeline described in the plan:
@@ -238,14 +240,40 @@ func (s *Server) finishSubmission(ctx context.Context, p submissionTail) bool {
 		// provider, not every field — an operator must explicitly
 		// allowlist which fields are relevant to judging spam.
 		classifyData := data.WithFieldsLimitedTo(fc.SpamFilter.IncludeFields)
-		sfStart := time.Now()
-		verdict, cerr := cf.SpamClassifier.Classify(ctx, classifyData)
-		sfElapsed := time.Since(sfStart)
-		s.Metrics.SpamFilterLatencySeconds.WithLabelValues(formID).Observe(sfElapsed.Seconds())
-		if cerr != nil {
-			slog.Debug("AI spam filter call failed", "request_id", requestID, "form_id", formID, "latency_ms", sfElapsed.Milliseconds(), "error", cerr)
-		} else {
-			slog.Debug("AI spam filter verdict", "request_id", requestID, "form_id", formID, "latency_ms", sfElapsed.Milliseconds(), "is_spam", verdict.IsSpam, "reason", verdict.Reason)
+
+		var verdict spamfilter.Verdict
+		var cerr error
+		if rl := fc.SpamFilter.RateLimit; rl != nil {
+			key := outboundRateLimitKey("spamfilter:"+formID, rl)
+			waited, allowed, rlErr := s.awaitOutboundToken(ctx, key, rl)
+			if waited > 0 {
+				s.Metrics.RatelimitOutboundWaitSeconds.WithLabelValues(formID, "spam_filter").Observe(waited.Seconds())
+			}
+			if rlErr == nil && !allowed {
+				slog.Debug("AI spam filter rate limit exceeded, skipping classify call", "request_id", requestID, "form_id", formID, "waited_ms", waited.Milliseconds())
+				// Resolved via on_error below, exactly like any other
+				// classifier failure — an operator who already decided
+				// what "the classifier is unavailable" means for this
+				// form doesn't need a second, separate decision for "the
+				// classifier is unavailable because we throttled it
+				// ourselves."
+				cerr = errors.New("spam_filter: rate limit exceeded")
+			}
+			// rlErr != nil (rate-limit backend error): fail open, same
+			// convention as everywhere else — fall through to the real
+			// Classify call below.
+		}
+
+		if cerr == nil {
+			sfStart := time.Now()
+			verdict, cerr = cf.SpamClassifier.Classify(ctx, classifyData)
+			sfElapsed := time.Since(sfStart)
+			s.Metrics.SpamFilterLatencySeconds.WithLabelValues(formID).Observe(sfElapsed.Seconds())
+			if cerr != nil {
+				slog.Debug("AI spam filter call failed", "request_id", requestID, "form_id", formID, "latency_ms", sfElapsed.Milliseconds(), "error", cerr)
+			} else {
+				slog.Debug("AI spam filter verdict", "request_id", requestID, "form_id", formID, "latency_ms", sfElapsed.Milliseconds(), "is_spam", verdict.IsSpam, "reason", verdict.Reason)
+			}
 		}
 
 		var trigger string

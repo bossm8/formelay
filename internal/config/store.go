@@ -30,6 +30,9 @@ func Load(globalPath string) (*Snapshot, error) {
 			return nil, fmt.Errorf("config: validate form %q: %w", id, err)
 		}
 	}
+	if err := resolveOutboundRateLimits(global, forms); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
 
 	return &Snapshot{Global: global, Forms: forms, Loaded: time.Now()}, nil
 }

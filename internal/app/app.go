@@ -25,9 +25,11 @@ type CompiledChannel struct {
 	Templates   map[string]*render.Template
 	ContentType map[string]string
 	// RateLimit, if set, throttles outbound deliveries on this channel —
-	// see config.ChannelRateLimitConfig. A passthrough, no compilation
-	// needed (unlike Templates).
-	RateLimit *config.ChannelRateLimitConfig
+	// see config.OutboundRateLimitConfig. A passthrough, no compilation
+	// needed (unlike Templates). The spam filter's equivalent doesn't need
+	// this treatment: CompiledForm.Config already retains the full raw
+	// FormConfig, so submit.go reads fc.SpamFilter.RateLimit directly.
+	RateLimit *config.OutboundRateLimitConfig
 }
 
 // CompiledForm is everything built from one FormConfig.

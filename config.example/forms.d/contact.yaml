@@ -42,6 +42,15 @@ spam_filter:
   # name/email (PII) never reach the AI provider. Delivery below still
   # gets every field as usual.
   include_fields: ["message"]
+  # Cap classifier calls well under the provider's own quota; wait briefly
+  # for capacity rather than resolving via on_error outright under a
+  # legitimate burst of submissions.
+  rate_limit:
+    rate: 20
+    window: 1m
+    burst: 5
+    on_limit: wait
+    max_wait: 5s
   on_spam: route
   on_error: deliver
   route:

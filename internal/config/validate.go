@@ -5,6 +5,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/bossm8/formelay/internal/yamlutil"
 )
 
 // RegexValidatorPrefix marks a fields.validators kind as a custom regex
@@ -29,6 +31,11 @@ func ValidateGlobal(g *GlobalConfig) error {
 		}
 	default:
 		return fmt.Errorf("rate_limit.backend must be 'memory' or 'valkey', got %q", g.RateLimit.Backend)
+	}
+	for name, b := range g.RateLimit.OutboundBuckets {
+		if err := validateRateLimitFields(b.Rate, b.Burst, b.Window, b.OnLimit, fmt.Sprintf("rate_limit.outbound_buckets[%q]", name)); err != nil {
+			return err
+		}
 	}
 	if g.FormsDir == "" {
 		return fmt.Errorf("forms_dir is required")
@@ -93,15 +100,8 @@ func ValidateForm(f *FormConfig) error {
 		if ch.Type == "" {
 			return fmt.Errorf("form %q: channel %q: 'type' is required", f.ID, ch.ID)
 		}
-		if rl := ch.RateLimit; rl != nil {
-			switch rl.OnLimit {
-			case "", "wait", "fail":
-			default:
-				return fmt.Errorf("form %q: channel %q: rate_limit.on_limit must be 'wait' or 'fail'", f.ID, ch.ID)
-			}
-			if rl.Rate <= 0 || rl.Window.Std() <= 0 || rl.Burst <= 0 {
-				return fmt.Errorf("form %q: channel %q: rate_limit.rate, .window, and .burst must all be > 0", f.ID, ch.ID)
-			}
+		if err := validateOutboundRateLimit(ch.RateLimit, fmt.Sprintf("channel %q", ch.ID), f.ID); err != nil {
+			return err
 		}
 	}
 
@@ -130,6 +130,9 @@ func ValidateForm(f *FormConfig) error {
 			if !channelIDs[id] {
 				return fmt.Errorf("form %q: spam_filter.route.error_channels references unknown channel id %q", f.ID, id)
 			}
+		}
+		if err := validateOutboundRateLimit(f.SpamFilter.RateLimit, "spam_filter", f.ID); err != nil {
+			return err
 		}
 	}
 
@@ -170,6 +173,81 @@ func validateFieldValidatorKind(kind string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown validator %q (must be 'email', 'url', 'notblank', or '%s<pattern>')", kind, RegexValidatorPrefix)
+}
+
+// validateOutboundRateLimit checks rl (a channel's or spam_filter's
+// rate_limit block); a nil rl (the default, no limiting configured) is
+// always valid. what names the block being validated for the error
+// message, e.g. `channel "email-owner"` or "spam_filter".
+//
+// shared_key and the inline rate/window/burst/on_limit/max_wait fields
+// are mutually exclusive (see the OutboundRateLimitConfig doc comment):
+// a shared_key block is only checked for that exclusivity here — its
+// actual numbers are resolved from the referenced global bucket by
+// resolveOutboundRateLimits, once every form has been individually
+// validated.
+func validateOutboundRateLimit(rl *OutboundRateLimitConfig, what, formID string) error {
+	if rl == nil {
+		return nil
+	}
+	if rl.SharedKey != "" {
+		if rl.Rate != 0 || rl.Window.Std() != 0 || rl.Burst != 0 || rl.OnLimit != "" || rl.MaxWait.Std() != 0 {
+			return fmt.Errorf("form %q: %s: rate_limit.shared_key is mutually exclusive with rate/window/burst/on_limit/max_wait — define those once in the global rate_limit.outbound_buckets entry instead", formID, what)
+		}
+		return nil
+	}
+	return validateRateLimitFields(rl.Rate, rl.Burst, rl.Window, rl.OnLimit, fmt.Sprintf("form %q: %s", formID, what))
+}
+
+// validateRateLimitFields checks the four numeric/enum fields shared by
+// both an inline OutboundRateLimitConfig and a named
+// OutboundBucketConfig. what prefixes the error message, already
+// carrying whatever context (form/block, or bucket name) is relevant.
+func validateRateLimitFields(rate, burst float64, window yamlutil.Duration, onLimit, what string) error {
+	switch onLimit {
+	case "", "wait", "fail":
+	default:
+		return fmt.Errorf("%s: rate_limit.on_limit must be 'wait' or 'fail'", what)
+	}
+	if rate <= 0 || window.Std() <= 0 || burst <= 0 {
+		return fmt.Errorf("%s: rate_limit.rate, .window, and .burst must all be > 0", what)
+	}
+	return nil
+}
+
+// resolveOutboundRateLimits fills in every shared_key-referencing
+// OutboundRateLimitConfig (across every form's channels and spam_filter)
+// with the numbers from its named global bucket. Must run after every
+// form has already passed ValidateForm (which only checks a shared_key
+// block's own exclusivity, not that the name it references exists —
+// that cross-references the global config, which a single form's
+// validation never sees). Mutates rl in place; SharedKey itself is left
+// set so outboundRateLimitKey (internal/api/dispatch.go) still pools
+// every reference to the same name into one bucket key.
+func resolveOutboundRateLimits(global *GlobalConfig, forms map[string]*FormConfig) error {
+	resolve := func(rl *OutboundRateLimitConfig, what, formID string) error {
+		if rl == nil || rl.SharedKey == "" {
+			return nil
+		}
+		bucket, ok := global.RateLimit.OutboundBuckets[rl.SharedKey]
+		if !ok {
+			return fmt.Errorf("form %q: %s: rate_limit.shared_key %q is not defined in rate_limit.outbound_buckets", formID, what, rl.SharedKey)
+		}
+		rl.Rate, rl.Window, rl.Burst, rl.OnLimit, rl.MaxWait = bucket.Rate, bucket.Window, bucket.Burst, bucket.OnLimit, bucket.MaxWait
+		return nil
+	}
+
+	for id, f := range forms {
+		for _, ch := range f.Channels {
+			if err := resolve(ch.RateLimit, fmt.Sprintf("channel %q", ch.ID), id); err != nil {
+				return err
+			}
+		}
+		if err := resolve(f.SpamFilter.RateLimit, "spam_filter", id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateSpamAction(field string, action SpamAction, formID string) error {

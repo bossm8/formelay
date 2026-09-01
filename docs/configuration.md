@@ -39,6 +39,30 @@ Paths (strings) to the per-form YAML directory and the directory template `path:
 | `valkey.dial_timeout` | duration | client default | Connection timeout. |
 | `valkey.key_prefix` | string | `""` | Prefixed onto every rate-limit key, useful if multiple services share one Valkey. |
 | `valkey.on_error` | `allow` \| `deny` | `allow` | What happens to a request if Valkey itself is unreachable *after* startup (see [Rate limiting](#rate-limiting)). |
+| `outbound_buckets` | map[string]object | `{}` | Named, shared outbound rate-limit buckets — see below. |
+
+#### `outbound_buckets`
+
+Each entry is `{rate, window, burst, on_limit, max_wait}` — the same shape and semantics as a channel's outbound [`rate_limit`](#rate_limit-optional) (`rate`/`window`/`burst` required and must all be `> 0`; `on_limit` is `wait` (default) or `fail`; `max_wait` only applies to `wait`). A channel's or `spam_filter`'s `rate_limit` block references one of these entries by name via `shared_key`, instead of defining its own numbers, when it needs to pool with another outbound call that genuinely hits the same real-world quota (e.g. two email channels through the same SMTP account, or a channel and the spam filter billed against the same provider account):
+
+```yaml
+rate_limit:
+  outbound_buckets:
+    primary-smtp:
+      rate: 10
+      window: 1m
+      burst: 10
+      on_limit: wait
+      max_wait: 5s
+```
+
+```yaml
+# on a channel, or spam_filter, elsewhere in a form:
+rate_limit:
+  shared_key: "primary-smtp"
+```
+
+**`shared_key` and the inline `rate`/`window`/`burst`/`on_limit`/`max_wait` fields are mutually exclusive** — a block is either `{shared_key: "..."}` alone or the inline fields alone, never both; config load rejects a block that sets both. This isn't just a style rule: the underlying token bucket is looked up purely by key, but a naive design would let each caller pass its own numbers on every check, so two blocks sharing a key with *different* numbers would silently disagree about the bucket's capacity depending on which one happened to check most recently. Defining the numbers exactly once, in `outbound_buckets`, makes that impossible — every reference to the same `shared_key` is guaranteed to agree, because there's only one place the numbers can come from. A `shared_key` naming an entry that doesn't exist in `outbound_buckets` is also a config-load error.
 
 #### Rate rules
 
@@ -145,8 +169,27 @@ Inherited by any `email` channel that doesn't override the same field itself.
 | `on_error` | `deliver` \| `deliver_tagged` \| `drop` \| `route` | `deliver` | Action when the classifier call itself fails — configured **independently** of `on_spam`, since a provider outage is "unknown," not "confirmed spam." |
 | `route.spam_channels`, `route.error_channels` | []string | `[]` | Channel `id`s (from this form's own `channels`) to notify instead of the normal set, used when the respective action is `route`. Empty means audit-log only. |
 | `route.spam_template`, `route.error_template` | string | — | A template shared by every channel in `route.spam_channels`/`error_channels` (see [Delivery templates](#delivery-templates)); `error_template` falls back to `spam_template` if unset. **Required** when the respective action (`on_spam`/`on_error`) is `route` — config validation rejects a form at load/reload time if the needed template is missing. |
+| `rate_limit` | object | unset (no limiting) | Throttles calls to the classifier — see below. |
 
 `deliver`/`deliver_tagged` continue to the form's normal `channels`; `deliver_tagged` additionally sets `.Meta.SpamSuspected` (and `.Meta.SpamReason`) so a template can flag it. `drop` skips delivery entirely (still audit-logged).
+
+#### `spam_filter.rate_limit` (optional)
+
+Throttles calls to the AI classifier itself — the same block, and the same two mutually exclusive shapes (inline numbers, or `shared_key` referencing a [`rate_limit.outbound_buckets`](#outbound_buckets) entry), as a channel's outbound [`rate_limit`](#rate_limit-optional) (see that section for the full field reference), reused here because a classifier call is exactly the same kind of rate-limited/cost-bearing third-party call a delivery channel makes:
+
+```yaml
+spam_filter:
+  enabled: true
+  rate_limit:
+    rate: 10
+    window: 1m
+    burst: 5
+    on_limit: fail
+```
+
+**An exceeded limit (or a timed-out `on_limit: wait`) is resolved exactly like any other classifier failure — through the form's own `spam_filter.on_error`, not a separate action.** An operator who already decided what "the classifier is unavailable" means for their form (`deliver`, `drop`, `route`, ...) doesn't have to decide it a second time for "the classifier is unavailable because we throttled it ourselves." When this happens, the real `Classify` call to the AI provider is never made.
+
+`on_limit: wait` blocks the submission (up to `max_wait`) waiting for capacity, same tradeoff as a channel's outbound wait — formelay has no queue, so this is the only way to avoid resolving via `on_error` under a legitimate burst; `on_limit: fail` resolves via `on_error` immediately instead. Either way it's observed in `formelay_ratelimit_outbound_wait_seconds{target="spam_filter"}` (wait time, `on_limit: wait` only) and `formelay_spam_filter_actions_total{trigger="error"}` (the resolved action). Use `shared_key` if the spam filter should share one bucket with a channel (or another form's spam filter) genuinely billed against the same provider account/quota — see [`rate_limit.outbound_buckets`](#outbound_buckets) for how the shared bucket is defined and why it can't be combined with inline numbers.
 
 ### `rate_limit` (optional override)
 
@@ -183,22 +226,25 @@ A list of delivery targets:
 
 Independent of the form-level `rate_limit` above (which throttles *incoming* submissions) — this throttles how often formelay actually sends *out* on this one channel, so a burst of legitimate submissions can't blow through a mail provider's or webhook's sending quota. Unset: no outbound limiting, unchanged from before this existed.
 
+Two mutually exclusive shapes — see [`rate_limit.outbound_buckets`](#outbound_buckets) for why they can't be combined:
+
 ```yaml
+# this channel gets its own private bucket:
 rate_limit:
   rate: 10          # required: tokens per window
   window: 1m         # required
   burst: 10           # required: max burst size
-  shared_key: ""        # optional: channels (in any form) sharing this exact
-                          #   value draw from one bucket instead of each
-                          #   getting their own — for multiple channels that
-                          #   actually hit one real quota (e.g. two email
-                          #   channels through the same SMTP account).
-                          #   Unset: this channel's own bucket, scoped by
-                          #   form + channel id.
   on_limit: wait          # "wait" (default) | "fail"
   max_wait: 5s              # only used when on_limit is "wait" (its default
                               #   too, if unset); how long to block for a
                               #   token before giving up as a failed delivery
+```
+
+```yaml
+# or: draw from a bucket shared with other channels/the spam filter,
+# defined once under the global rate_limit.outbound_buckets:
+rate_limit:
+  shared_key: "primary-smtp"
 ```
 
 `rate`/`window`/`burst` use the same token-bucket semantics as the [rate rules](#rate-rules) above. `on_limit: wait` blocks (up to `max_wait`) for capacity before sending — formelay has no queue, so this is the only way to avoid dropping a delivery outright under a legitimate burst; `on_limit: fail` fails the delivery immediately instead, with zero added latency. Either way, an exceeded limit shows up as `status="rate_limited"` in `formelay_deliveries_total` and the audit log, distinct from an actual send failure. This uses the same backend as `rate_limit.backend` above (`memory` or `valkey`) — with `valkey`, an outbound limit is automatically shared across replicas too, which matters once there's more than one formelay instance hitting the same provider quota.

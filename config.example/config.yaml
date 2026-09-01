@@ -28,6 +28,19 @@ rate_limit:
   #   dial_timeout: 2s
   #   key_prefix: "formelay:ratelimit:"
   #   on_error: allow
+  # outbound_buckets:
+  #   # A named, shared outbound bucket: reference it from a channel's or
+  #   # spam_filter's rate_limit via `shared_key: "primary-smtp"` when
+  #   # multiple outbound calls genuinely hit the same real-world quota
+  #   # (e.g. two email channels through the same SMTP account). A block
+  #   # using shared_key carries no numbers of its own — they live here,
+  #   # once, so every reference agrees.
+  #   primary-smtp:
+  #     rate: 10
+  #     window: 1m
+  #     burst: 10
+  #     on_limit: wait
+  #     max_wait: 5s
 
 smtp_defaults:
   host: "smtp.example.com"

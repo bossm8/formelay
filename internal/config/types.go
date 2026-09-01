@@ -69,6 +69,25 @@ type RateLimitConfig struct {
 	CleanupInterval yamlutil.Duration `yaml:"cleanup_interval"`
 	BucketIdleTTL   yamlutil.Duration `yaml:"bucket_idle_ttl"`
 	Valkey          ValkeyConfig      `yaml:"valkey"`
+	// OutboundBuckets names shared outbound rate-limit buckets — the only
+	// place a shared bucket's actual rate/burst/window/on_limit/max_wait
+	// live. A channel's or spam_filter's rate_limit block references one
+	// of these by name via shared_key instead of defining its own
+	// numbers (see OutboundRateLimitConfig) — mutually exclusive with
+	// inline numbers, so every user of the same shared bucket is
+	// guaranteed to agree on its capacity instead of racing to redefine
+	// it differently.
+	OutboundBuckets map[string]OutboundBucketConfig `yaml:"outbound_buckets"`
+}
+
+// OutboundBucketConfig is one named, shared outbound rate-limit bucket —
+// see RateLimitConfig.OutboundBuckets.
+type OutboundBucketConfig struct {
+	Rate    float64           `yaml:"rate"`
+	Window  yamlutil.Duration `yaml:"window"`
+	Burst   float64           `yaml:"burst"`
+	OnLimit string            `yaml:"on_limit"`
+	MaxWait yamlutil.Duration `yaml:"max_wait"`
 }
 
 type SMTPDefaultsConfig struct {
@@ -216,6 +235,16 @@ type SpamFilterConfig struct {
 	OnSpam        SpamAction      `yaml:"on_spam"`
 	OnError       SpamAction      `yaml:"on_error"`
 	Route         SpamRouteConfig `yaml:"route"`
+	// RateLimit throttles calls to the classifier — the same reusable
+	// block as a channel's outbound rate_limit (see
+	// OutboundRateLimitConfig), since an AI provider call is exactly the
+	// same kind of rate-limited/cost-bearing third-party call a delivery
+	// channel makes. Nil means no limiting. When the limit is exceeded (or
+	// on_limit: wait times out), it's resolved exactly like any other
+	// classifier failure — via OnError — not a separate action, so an
+	// operator who already decided what "the classifier is unavailable"
+	// means for their form doesn't need to decide it twice.
+	RateLimit *OutboundRateLimitConfig `yaml:"rate_limit"`
 }
 
 type RateLimitOverride struct {
@@ -230,28 +259,44 @@ type FieldsConfig struct {
 }
 
 type ChannelConfig struct {
-	ID        string                  `yaml:"id"`
-	Type      string                  `yaml:"type"`
-	Enabled   *bool                   `yaml:"enabled"`
-	RateLimit *ChannelRateLimitConfig `yaml:"rate_limit"`
-	Config    map[string]any          `yaml:"config"`
+	ID        string                   `yaml:"id"`
+	Type      string                   `yaml:"type"`
+	Enabled   *bool                    `yaml:"enabled"`
+	RateLimit *OutboundRateLimitConfig `yaml:"rate_limit"`
+	Config    map[string]any           `yaml:"config"`
 }
 
-// ChannelRateLimitConfig throttles outbound deliveries on this channel
-// (e.g. to stay under a mail provider's sending quota), independent of the
-// inbound rate_limit block above. Nil means no outbound limiting.
-type ChannelRateLimitConfig struct {
+// OutboundRateLimitConfig throttles an outbound, third-party call — a
+// channel's delivery (e.g. to stay under a mail provider's sending quota)
+// or the AI spam filter's classifier call — independent of the inbound
+// rate_limit block above. Nil means no outbound limiting. The same block
+// shape is reused for both, since they're the same kind of thing: a
+// rate-limited/cost-bearing call to something formelay doesn't control.
+//
+// The two ways to fill this in are mutually exclusive, validated at
+// config load (see validateOutboundRateLimit):
+//   - SharedKey alone: draws from a bucket named in the global
+//     rate_limit.outbound_buckets map, shared with every other channel
+//     or spam filter (in any form) referencing the same name — for
+//     multiple outbound calls that actually hit one real-world quota
+//     (e.g. two email channels through the same SMTP account, or two
+//     forms sharing one AI provider account). Rate/Window/Burst/OnLimit/
+//     MaxWait are resolved from that bucket definition (see
+//     resolveOutboundRateLimits), not set here directly, so every user
+//     of the same shared_key is guaranteed to agree on its numbers.
+//   - Rate/Window/Burst (+ optional OnLimit/MaxWait) alone: this
+//     channel/spam filter gets its own private bucket, scoped by form
+//     (+ channel id, for a channel).
+type OutboundRateLimitConfig struct {
 	Rate   float64           `yaml:"rate"`
 	Window yamlutil.Duration `yaml:"window"`
 	Burst  float64           `yaml:"burst"`
-	// SharedKey, if set, groups this channel's bucket with every other
-	// channel (in any form) using the same value — for multiple channels
-	// that actually hit one real-world quota (e.g. two email channels
-	// through the same SMTP account). Unset: this channel gets its own
-	// bucket, scoped by form + channel id.
+	// SharedKey names an entry in the global rate_limit.outbound_buckets
+	// map (see the type doc comment above) — mutually exclusive with
+	// Rate/Window/Burst/OnLimit/MaxWait.
 	SharedKey string `yaml:"shared_key"`
 	// OnLimit is "wait" (default) or "fail": wait briefly for a token
-	// before sending, or fail this channel's delivery immediately.
+	// before proceeding, or fail immediately.
 	OnLimit string `yaml:"on_limit"`
 	// MaxWait bounds how long "wait" blocks before giving up as a failure.
 	// Only meaningful when OnLimit is "wait" (the default). Default 5s.

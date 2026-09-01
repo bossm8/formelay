@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bossm8/formelay/internal/captcha"
 	"github.com/bossm8/formelay/internal/notify"
@@ -103,12 +104,28 @@ channels:
 }
 
 // TestCompileFormPassesThroughChannelRateLimit proves the outbound
-// rate_limit block on a channel survives compilation unchanged — it's a
-// pure passthrough onto CompiledChannel, no parsing needed (unlike
-// templates).
+// rate_limit block on a channel survives compilation — it's a pure
+// passthrough onto CompiledChannel, no parsing needed (unlike
+// templates) — for both an inline block and one resolved from a global
+// shared_key bucket (config.resolveOutboundRateLimits runs before
+// compilation, so by the time CompiledChannel is built, a shared_key
+// block's numbers are already filled in exactly like an inline one).
 func TestCompileFormPassesThroughChannelRateLimit(t *testing.T) {
 	dir := t.TempDir()
-	writeGlobalConfig(t, dir)
+	writeFile(t, filepath.Join(dir, "config.yaml"), `
+server:
+  listen_addr: "127.0.0.1:0"
+forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+templates_dir: "`+filepath.Join(dir, "templates")+`"
+rate_limit:
+  outbound_buckets:
+    primary-smtp:
+      rate: 5
+      window: 1m
+      burst: 5
+      on_limit: wait
+      max_wait: 3s
+`)
 	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
 id: contact
 auth:
@@ -120,11 +137,14 @@ channels:
       rate: 5
       window: 1m
       burst: 5
-      shared_key: "primary-smtp"
       on_limit: wait
       max_wait: 3s
   - id: ch2
     type: fake
+  - id: ch3
+    type: fake
+    rate_limit:
+      shared_key: "primary-smtp"
 `)
 	regs := newRegistries()
 	regs.Notify.Register("fake", func(map[string]any, notify.GlobalDefaults) (notify.Notifier, error) {
@@ -140,12 +160,20 @@ channels:
 	if rl == nil {
 		t.Fatal("expected ch1.RateLimit to be populated")
 	}
-	if rl.Rate != 5 || rl.Burst != 5 || rl.SharedKey != "primary-smtp" || rl.OnLimit != "wait" {
+	if rl.Rate != 5 || rl.Burst != 5 || rl.OnLimit != "wait" {
 		t.Fatalf("unexpected passthrough: %+v", rl)
 	}
 
 	if cf.Channels["ch2"].RateLimit != nil {
 		t.Fatal("expected ch2.RateLimit to stay nil: rate_limit is opt-in, unset by default")
+	}
+
+	rl3 := cf.Channels["ch3"].RateLimit
+	if rl3 == nil {
+		t.Fatal("expected ch3.RateLimit to be populated")
+	}
+	if rl3.SharedKey != "primary-smtp" || rl3.Rate != 5 || rl3.Burst != 5 || rl3.OnLimit != "wait" || rl3.MaxWait.Std() != 3*time.Second {
+		t.Fatalf("expected ch3's shared_key block to be resolved from the global bucket, got %+v", rl3)
 	}
 }
 

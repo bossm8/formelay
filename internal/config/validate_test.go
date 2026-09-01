@@ -273,7 +273,7 @@ func TestValidateForm(t *testing.T) {
 
 	t.Run("channel rate_limit: valid block passes", func(t *testing.T) {
 		f := base()
-		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10}
+		f.Channels[0].RateLimit = &OutboundRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10}
 		if err := ValidateForm(f); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -281,7 +281,7 @@ func TestValidateForm(t *testing.T) {
 
 	t.Run("channel rate_limit: invalid on_limit rejected", func(t *testing.T) {
 		f := base()
-		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10, OnLimit: "retry"}
+		f.Channels[0].RateLimit = &OutboundRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10, OnLimit: "retry"}
 		if err := ValidateForm(f); err == nil {
 			t.Fatal("expected error for invalid rate_limit.on_limit")
 		}
@@ -289,7 +289,7 @@ func TestValidateForm(t *testing.T) {
 
 	t.Run("channel rate_limit: non-positive rate rejected", func(t *testing.T) {
 		f := base()
-		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 0, Window: yamlutil.Duration(time.Minute), Burst: 10}
+		f.Channels[0].RateLimit = &OutboundRateLimitConfig{Rate: 0, Window: yamlutil.Duration(time.Minute), Burst: 10}
 		if err := ValidateForm(f); err == nil {
 			t.Fatal("expected error for rate_limit.rate <= 0")
 		}
@@ -297,7 +297,7 @@ func TestValidateForm(t *testing.T) {
 
 	t.Run("channel rate_limit: zero window rejected", func(t *testing.T) {
 		f := base()
-		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 10, Burst: 10}
+		f.Channels[0].RateLimit = &OutboundRateLimitConfig{Rate: 10, Burst: 10}
 		if err := ValidateForm(f); err == nil {
 			t.Fatal("expected error for rate_limit.window <= 0")
 		}
@@ -305,9 +305,83 @@ func TestValidateForm(t *testing.T) {
 
 	t.Run("channel rate_limit: non-positive burst rejected", func(t *testing.T) {
 		f := base()
-		f.Channels[0].RateLimit = &ChannelRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 0}
+		f.Channels[0].RateLimit = &OutboundRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 0}
 		if err := ValidateForm(f); err == nil {
 			t.Fatal("expected error for rate_limit.burst <= 0")
+		}
+	})
+
+	t.Run("spam_filter rate_limit: valid block passes", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.RateLimit = &OutboundRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10}
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("spam_filter rate_limit: invalid on_limit rejected", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.RateLimit = &OutboundRateLimitConfig{Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10, OnLimit: "retry"}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for invalid spam_filter.rate_limit.on_limit")
+		}
+	})
+
+	t.Run("spam_filter rate_limit: non-positive rate rejected", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.RateLimit = &OutboundRateLimitConfig{Rate: 0, Window: yamlutil.Duration(time.Minute), Burst: 10}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for spam_filter.rate_limit.rate <= 0")
+		}
+	})
+
+	t.Run("channel rate_limit: shared_key alone passes", func(t *testing.T) {
+		f := base()
+		f.Channels[0].RateLimit = &OutboundRateLimitConfig{SharedKey: "primary-smtp"}
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("channel rate_limit: shared_key with inline rate is rejected as mutually exclusive", func(t *testing.T) {
+		f := base()
+		f.Channels[0].RateLimit = &OutboundRateLimitConfig{SharedKey: "primary-smtp", Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for shared_key combined with inline rate/window/burst")
+		}
+	})
+
+	t.Run("channel rate_limit: shared_key with inline on_limit is rejected as mutually exclusive", func(t *testing.T) {
+		f := base()
+		f.Channels[0].RateLimit = &OutboundRateLimitConfig{SharedKey: "primary-smtp", OnLimit: "fail"}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for shared_key combined with inline on_limit")
+		}
+	})
+
+	t.Run("spam_filter rate_limit: shared_key alone passes", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.RateLimit = &OutboundRateLimitConfig{SharedKey: "ai-provider"}
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("spam_filter rate_limit: shared_key with inline burst is rejected as mutually exclusive", func(t *testing.T) {
+		f := base()
+		f.SpamFilter.Enabled = true
+		f.SpamFilter.Provider.Type = "ai"
+		f.SpamFilter.RateLimit = &OutboundRateLimitConfig{SharedKey: "ai-provider", Burst: 5}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for shared_key combined with inline burst")
 		}
 	})
 
@@ -409,6 +483,36 @@ func TestValidateGlobal(t *testing.T) {
 		g.RateLimit.Valkey.OnError = "maybe"
 		if err := ValidateGlobal(g); err == nil {
 			t.Fatal("expected error for invalid rate_limit.valkey.on_error")
+		}
+	})
+
+	t.Run("outbound_buckets: valid entry passes", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.RateLimit.OutboundBuckets = map[string]OutboundBucketConfig{
+			"primary-smtp": {Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10},
+		}
+		if err := ValidateGlobal(g); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("outbound_buckets: invalid on_limit rejected", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.RateLimit.OutboundBuckets = map[string]OutboundBucketConfig{
+			"primary-smtp": {Rate: 10, Window: yamlutil.Duration(time.Minute), Burst: 10, OnLimit: "retry"},
+		}
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for invalid outbound_buckets[...].on_limit")
+		}
+	})
+
+	t.Run("outbound_buckets: non-positive rate rejected", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.RateLimit.OutboundBuckets = map[string]OutboundBucketConfig{
+			"primary-smtp": {Rate: 0, Window: yamlutil.Duration(time.Minute), Burst: 10},
+		}
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for outbound_buckets[...].rate <= 0")
 		}
 	})
 

@@ -126,7 +126,8 @@ func (s *Server) sendOne(ctx context.Context, requestID, formID, channelID strin
 		return audit.ChannelResult{ID: channelID, Type: cc.Notifier.Type(), Success: false, Error: "render: " + errMsg}
 	}
 	if cc.RateLimit != nil {
-		waited, allowed, err := s.awaitOutboundToken(ctx, formID, channelID, cc.RateLimit)
+		key := outboundRateLimitKey("channel:"+formID+":"+channelID, cc.RateLimit)
+		waited, allowed, err := s.awaitOutboundToken(ctx, key, cc.RateLimit)
 		if waited > 0 {
 			s.Metrics.RatelimitOutboundWaitSeconds.WithLabelValues(formID, channelID).Observe(waited.Seconds())
 		}
@@ -156,24 +157,28 @@ func (s *Server) sendOne(ctx context.Context, requestID, formID, channelID strin
 	return audit.ChannelResult{ID: channelID, Type: cc.Notifier.Type(), Success: err == nil, Error: errStr}
 }
 
-// outboundRateLimitKey scopes the bucket by form+channel by default, so
-// two unrelated channels named the same in different forms never
-// accidentally share a bucket. SharedKey opts out of that scoping
-// entirely, for channels that genuinely share one real-world quota.
-func outboundRateLimitKey(formID, channelID string, rl *config.ChannelRateLimitConfig) string {
+// outboundRateLimitKey scopes a bucket by defaultKey (e.g. a specific
+// channel in a specific form, or a form's spam filter), unless
+// rl.SharedKey is set — in which case every caller using the same
+// SharedKey (a channel or the spam filter, in any form) draws from one
+// shared bucket, for outbound calls that genuinely hit one real-world
+// quota (e.g. two email channels through the same SMTP account, or a
+// channel and the spam filter both billed against the same provider
+// account).
+func outboundRateLimitKey(defaultKey string, rl *config.OutboundRateLimitConfig) string {
 	if rl.SharedKey != "" {
-		return "channel-shared:" + rl.SharedKey
+		return "outbound-shared:" + rl.SharedKey
 	}
-	return "channel:" + formID + ":" + channelID
+	return defaultKey
 }
 
-// awaitOutboundToken checks (and, for on_limit: wait, polls) rl's bucket.
-// waited is only non-zero once actual polling happened, so a normal
-// immediately-allowed call never touches the wait-time histogram. Uses
-// ctx directly, not the channelSendTimeout wrap — a configured wait
-// shouldn't eat into the network send's own timeout budget.
-func (s *Server) awaitOutboundToken(ctx context.Context, formID, channelID string, rl *config.ChannelRateLimitConfig) (waited time.Duration, allowed bool, err error) {
-	key := outboundRateLimitKey(formID, channelID, rl)
+// awaitOutboundToken checks (and, for on_limit: wait, polls) rl's bucket
+// under key (see outboundRateLimitKey). waited is only non-zero once
+// actual polling happened, so a normal immediately-allowed call never
+// touches the wait-time histogram. Uses ctx directly, not
+// channelSendTimeout — a configured wait shouldn't eat into a network
+// send's own timeout budget.
+func (s *Server) awaitOutboundToken(ctx context.Context, key string, rl *config.OutboundRateLimitConfig) (waited time.Duration, allowed bool, err error) {
 	rate, burst, window := rl.Rate, rl.Burst, rl.Window.Std()
 
 	allowed, err = s.RateLimiter.Allow(ctx, key, rate, burst, window)

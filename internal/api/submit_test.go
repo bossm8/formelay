@@ -38,6 +38,18 @@ func (f *fakeRateLimiter) Allow(_ context.Context, _ string, _, _ float64, _ tim
 	return !f.denyAll, nil
 }
 
+// keyedRateLimiter denies only for keys with the given prefix, allowing
+// everything else — lets a test control exactly one rate-limit dimension
+// (e.g. the spam filter's own bucket) without needing to enumerate every
+// inbound Allow() call the pipeline also makes.
+type keyedRateLimiter struct {
+	denyPrefix string
+}
+
+func (f *keyedRateLimiter) Allow(_ context.Context, key string, _, _ float64, _ time.Duration) (bool, error) {
+	return !strings.HasPrefix(key, f.denyPrefix), nil
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -340,6 +352,92 @@ channels:
 	want := map[string]string{"name": "Alice", "email": "alice@example.com", "message": "Hello there"}
 	if !equalStringMaps(delivered, want) {
 		t.Fatalf("delivered payload = %v, want %v (delivery must not be filtered by include_fields)", delivered, want)
+	}
+}
+
+// TestSubmit_SpamFilterRateLimited proves an exceeded spam_filter.rate_limit
+// is resolved via the classifier's own on_error action, exactly like any
+// other classifier failure, and never reaches the real Classify call.
+func TestSubmit_SpamFilterRateLimited(t *testing.T) {
+	rec := &fakeClassifierRecorder{}
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.yaml"), `
+server:
+  listen_addr: "127.0.0.1:0"
+forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+templates_dir: "`+filepath.Join(dir, "templates")+`"
+security:
+  max_body_bytes: 65536
+rate_limit:
+  backend: memory
+  default:
+    per_ip: {rate: 100, window: 1m, burst: 100}
+    per_form: {rate: 100, window: 1m, burst: 100}
+    global: {rate: 1000, window: 1m, burst: 1000}
+`)
+	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+id: contact
+allowed_origins: ["https://example.com"]
+auth:
+  site_key: "the-key"
+fields:
+  required: ["name", "email", "message"]
+spam_filter:
+  enabled: true
+  provider:
+    type: fake
+  include_fields: ["message"]
+  rate_limit:
+    rate: 1
+    window: 1m
+    burst: 1
+    on_limit: fail
+  on_spam: deliver
+  on_error: drop
+channels:
+  - id: wh
+    type: webhook
+    config:
+      url: "https://example.invalid/hook"
+      template: "body.tmpl"
+`)
+	writeFile(t, filepath.Join(dir, "templates", "body.tmpl"), `{"name": {{ .Fields.name | json }}}`)
+
+	registries := app.Registries{
+		Notify:     notify.NewRegistry(),
+		Captcha:    captcha.NewRegistry(),
+		SpamFilter: spamfilter.NewRegistry(),
+	}
+	registries.Notify.Register(webhook.Type, webhook.New)
+	registries.SpamFilter.Register("fake", func(map[string]any, spamfilter.PromptSource) (spamfilter.Classifier, error) {
+		return &fakeClassifier{rec: rec}, nil
+	})
+
+	a := app.New(filepath.Join(dir, "config.yaml"), registries)
+	if err := a.Reload(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	s := &Server{
+		App:         a,
+		RateLimiter: &keyedRateLimiter{denyPrefix: "spamfilter:"},
+		Audit:       audit.New(log),
+		Metrics:     metrics.New("test", "test", "test"),
+		IDGen:       func() string { return "test-request-id" },
+	}
+
+	form := url.Values{"name": {"Alice"}, "email": {"alice@example.com"}, "message": {"Hello there"}}
+	recSubmit := doSubmit(t, s, "contact", form, map[string]string{"X-Formelay-Site-Key": "the-key"})
+	if recSubmit.Code != http.StatusOK {
+		t.Fatalf("expected 200 (on_error: drop responds success), got %d: %s", recSubmit.Code, recSubmit.Body.String())
+	}
+
+	rec.mu.Lock()
+	called := rec.called
+	rec.mu.Unlock()
+	if called {
+		t.Fatalf("expected the classifier to never be called once the outbound rate limit blocked it")
 	}
 }
 

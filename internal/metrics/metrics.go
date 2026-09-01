@@ -78,9 +78,9 @@ func New(version, commit, goVersion string) *Metrics {
 			Name: "formelay_ratelimit_backend_errors_total", Help: "Rate-limit backend connectivity/timeout errors.",
 		}, []string{"backend"}),
 		RatelimitOutboundWaitSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "formelay_ratelimit_outbound_wait_seconds", Help: "Time spent waiting for an outbound channel rate-limit token (on_limit: wait).",
+			Name: "formelay_ratelimit_outbound_wait_seconds", Help: "Time spent waiting for an outbound rate-limit token (on_limit: wait) — a channel delivery or the AI spam filter call.",
 			Buckets: []float64{.1, .25, .5, 1, 2.5, 5, 10, 30},
-		}, []string{"form", "channel"}),
+		}, []string{"form", "target"}),
 		HTTPRequestsInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "formelay_http_requests_in_flight", Help: "In-flight HTTP requests.",
 		}),
