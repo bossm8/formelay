@@ -486,6 +486,16 @@ func TestValidateGlobal(t *testing.T) {
 		}
 	})
 
+	t.Run("valkey password_env set but env var unset is rejected", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.RateLimit.Backend = "valkey"
+		g.RateLimit.Valkey.Addresses = []string{"127.0.0.1:6379"}
+		g.RateLimit.Valkey.PasswordEnv = "TEST_VALKEY_UNSET_PASSWORD_VAR"
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for rate_limit.valkey.password_env referencing an unset env var")
+		}
+	})
+
 	t.Run("outbound_buckets: valid entry passes", func(t *testing.T) {
 		g := DefaultGlobalConfig()
 		g.RateLimit.OutboundBuckets = map[string]OutboundBucketConfig{

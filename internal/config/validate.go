@@ -29,6 +29,9 @@ func ValidateGlobal(g *GlobalConfig) error {
 		if g.RateLimit.Valkey.OnError != "" && g.RateLimit.Valkey.OnError != "allow" && g.RateLimit.Valkey.OnError != "deny" {
 			return fmt.Errorf("rate_limit.valkey.on_error must be 'allow' or 'deny'")
 		}
+		if g.RateLimit.Valkey.PasswordEnv != "" && os.Getenv(g.RateLimit.Valkey.PasswordEnv) == "" {
+			return fmt.Errorf("rate_limit.valkey.password_env: environment variable %q is not set", g.RateLimit.Valkey.PasswordEnv)
+		}
 	default:
 		return fmt.Errorf("rate_limit.backend must be 'memory' or 'valkey', got %q", g.RateLimit.Backend)
 	}
