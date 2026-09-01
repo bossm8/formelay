@@ -36,6 +36,12 @@ spam_filter:
     timeout: 5s
   # system_template / user_template left unset: uses the built-in,
   # injection-hardened default prompt.
+  #
+  # include_fields is privacy-safe by default (sends nothing) — this form
+  # only sends the free-text field actually useful for judging spam;
+  # name/email (PII) never reach the AI provider. Delivery below still
+  # gets every field as usual.
+  include_fields: ["message"]
   on_spam: route
   on_error: deliver
   route:

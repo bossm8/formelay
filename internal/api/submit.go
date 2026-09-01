@@ -233,7 +233,10 @@ func (s *Server) finishSubmission(ctx context.Context, p submissionTail) bool {
 	if fc.SpamFilter.Enabled && cf.SpamClassifier != nil {
 		// A filtered *copy* for the classifier only: data itself (used
 		// below for delivery and the human-facing spam-review template)
-		// must keep every field regardless of include_fields.
+		// must keep every field regardless of include_fields. Privacy-safe
+		// by default: an unset include_fields sends zero fields to the AI
+		// provider, not every field — an operator must explicitly
+		// allowlist which fields are relevant to judging spam.
 		classifyData := data.WithFieldsLimitedTo(fc.SpamFilter.IncludeFields)
 		sfStart := time.Now()
 		verdict, cerr := cf.SpamClassifier.Classify(ctx, classifyData)

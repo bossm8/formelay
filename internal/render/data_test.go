@@ -38,10 +38,16 @@ func TestWithFieldsLimitedTo(t *testing.T) {
 		}
 	})
 
-	t.Run("empty allowlist is a no-op", func(t *testing.T) {
+	t.Run("empty allowlist yields zero fields, privacy-safe by default", func(t *testing.T) {
 		got := full.WithFieldsLimitedTo(nil)
-		if !reflect.DeepEqual(got, full) {
-			t.Fatalf("expected unchanged SubmissionData, got %+v", got)
+		if len(got.Fields) != 0 {
+			t.Fatalf("expected no Fields, got %v", got.Fields)
+		}
+		if len(got.FieldsMulti) != 0 {
+			t.Fatalf("expected no FieldsMulti, got %v", got.FieldsMulti)
+		}
+		if got.Form != full.Form {
+			t.Fatalf("Form changed: got %v, want %v", got.Form, full.Form)
 		}
 	})
 

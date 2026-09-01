@@ -206,11 +206,12 @@ type SpamFilterConfig struct {
 	SystemInline   string             `yaml:"system_template_inline"`
 	UserTemplate   string             `yaml:"user_template"`
 	UserInline     string             `yaml:"user_template_inline"`
-	// IncludeFields, if non-empty, restricts which submitted fields are
-	// sent to the classifier (an allowlist, not just a template-level
-	// omission: a listed-out field is dropped before Classify ever sees
-	// it, so a custom user_template can't accidentally leak it back in).
-	// Empty/unset sends every field, unchanged from prior behavior.
+	// IncludeFields is an allowlist of which submitted fields are sent to
+	// the classifier — not just a template-level omission: a field left
+	// off the list is dropped before Classify ever sees it, so a custom
+	// user_template can't accidentally leak it back in. Privacy-safe by
+	// default: empty/unset sends zero fields, not every field — an
+	// operator must explicitly opt each field in.
 	IncludeFields []string        `yaml:"include_fields"`
 	OnSpam        SpamAction      `yaml:"on_spam"`
 	OnError       SpamAction      `yaml:"on_error"`
