@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"   # public submission API
-      - "9090:9090"   # metrics/health - keep internal-only in real deployments
+      - "9696:9696"   # metrics/health - keep internal-only in real deployments
     environment:
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - FORM_CONTACT_DISCORD_WEBHOOK=${FORM_CONTACT_DISCORD_WEBHOOK:-}
@@ -20,7 +20,7 @@ services:
       # - VALKEY_PASSWORD=${VALKEY_PASSWORD:-}
     volumes:
       - ./config.example/config.yaml:/etc/formelay/config.yaml:ro
-      - ./config.example/forms.d:/etc/formelay/forms.d:ro
+      - ./config.example/forms:/etc/formelay/forms:ro
       - ./config.example/templates:/etc/formelay/templates:ro
 
   # Optional: shared rate-limit state across multiple formelay replicas.

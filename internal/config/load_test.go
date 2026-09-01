@@ -24,7 +24,7 @@ func TestLoadGlobal(t *testing.T) {
 server:
   listen_addr: "0.0.0.0:9999"
   read_timeout: 5s
-forms_dir: "/etc/formelay/forms.d"
+forms_dir: "/etc/formelay/forms"
 templates_dir: "/etc/formelay/templates"
 rate_limit:
   backend: memory

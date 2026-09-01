@@ -69,7 +69,7 @@ func newTestServer(t *testing.T, formsYAML string) (*Server, string) {
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 server:
   listen_addr: "127.0.0.1:0"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 security:
   max_body_bytes: 65536
@@ -80,7 +80,7 @@ rate_limit:
     per_form: {rate: 100, window: 1m, burst: 100}
     global: {rate: 1000, window: 1m, burst: 1000}
 `)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), formsYAML)
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), formsYAML)
 	writeFile(t, filepath.Join(dir, "templates", "body.tmpl"), `{"name": {{ .Fields.name | json }}}`)
 
 	registries := app.Registries{
@@ -267,7 +267,7 @@ func TestSubmit_SpamFilterIncludeFields(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 server:
   listen_addr: "127.0.0.1:0"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 security:
   max_body_bytes: 65536
@@ -278,7 +278,7 @@ rate_limit:
     per_form: {rate: 100, window: 1m, burst: 100}
     global: {rate: 1000, window: 1m, burst: 1000}
 `)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 allowed_origins: ["https://example.com"]
 auth:
@@ -365,7 +365,7 @@ func TestSubmit_SpamFilterRateLimited(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 server:
   listen_addr: "127.0.0.1:0"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 security:
   max_body_bytes: 65536
@@ -376,7 +376,7 @@ rate_limit:
     per_form: {rate: 100, window: 1m, burst: 100}
     global: {rate: 1000, window: 1m, burst: 1000}
 `)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 allowed_origins: ["https://example.com"]
 auth:
@@ -464,7 +464,7 @@ func TestSubmit_ResponseModeAsync(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 server:
   listen_addr: "127.0.0.1:0"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 security:
   max_body_bytes: 65536
@@ -475,7 +475,7 @@ rate_limit:
     per_form: {rate: 100, window: 1m, burst: 100}
     global: {rate: 1000, window: 1m, burst: 1000}
 `)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 allowed_origins: ["https://example.com"]
 auth:
@@ -687,7 +687,7 @@ channels:
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 server:
   listen_addr: "127.0.0.1:0"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 security:
   max_body_bytes: 65536
@@ -698,7 +698,7 @@ rate_limit:
     per_form: {rate: 100, window: 1m, burst: 100}
     global: {rate: 1000, window: 1m, burst: 1000}
 `)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), spamForm)
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), spamForm)
 	writeFile(t, filepath.Join(dir, "templates", "body.tmpl"), `{"name": {{ .Fields.name | json }}}`)
 
 	registries := app.Registries{

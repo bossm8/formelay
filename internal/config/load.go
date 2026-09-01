@@ -75,7 +75,7 @@ func DefaultGlobalConfig() *GlobalConfig {
 		Server: ServerConfig{
 			ListenAddr: "0.0.0.0:8080",
 		},
-		FormsDir:     "/etc/formelay/forms.d",
+		FormsDir:     "/etc/formelay/forms",
 		TemplatesDir: "/etc/formelay/templates",
 		Security: SecurityConfig{
 			MaxBodyBytes: 256 * 1024,
@@ -91,7 +91,7 @@ func DefaultGlobalConfig() *GlobalConfig {
 		Reload: ReloadConfig{WatchFiles: true, HandleSIGHUP: true},
 		Metrics: MetricsConfig{
 			Enabled:    true,
-			ListenAddr: "0.0.0.0:9090",
+			ListenAddr: "0.0.0.0:9696",
 			Path:       "/metrics",
 		},
 		Health: HealthConfig{

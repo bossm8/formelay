@@ -13,7 +13,7 @@ func writeValidGlobal(t *testing.T, dir string) string {
 	writeFile(t, path, `
 server:
   listen_addr: "0.0.0.0:8080"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 `)
 	return path
@@ -23,7 +23,7 @@ func TestLoad(t *testing.T) {
 	t.Run("happy path populates a snapshot", func(t *testing.T) {
 		dir := t.TempDir()
 		path := writeValidGlobal(t, dir)
-		writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), "id: contact\nauth:\n  site_key: k\n")
+		writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), "id: contact\nauth:\n  site_key: k\n")
 
 		snap, err := Load(path)
 		if err != nil {
@@ -45,7 +45,7 @@ func TestLoad(t *testing.T) {
 		path := filepath.Join(dir, "config.yaml")
 		// listen_addr empty -> ValidateGlobal error.
 		writeFile(t, path, `
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 server:
   listen_addr: ""
 `)
@@ -76,7 +76,7 @@ server:
 		dir := t.TempDir()
 		path := writeValidGlobal(t, dir)
 		// Missing auth.site_key -> ValidateForm error.
-		writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), "id: contact\n")
+		writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), "id: contact\n")
 
 		_, err := Load(path)
 		if err == nil {
@@ -90,7 +90,7 @@ server:
 	t.Run("a shared_key referencing an undefined outbound bucket fails Load", func(t *testing.T) {
 		dir := t.TempDir()
 		path := writeValidGlobal(t, dir)
-		writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+		writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: k
@@ -117,7 +117,7 @@ channels:
 		writeFile(t, path, `
 server:
   listen_addr: "0.0.0.0:8080"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 rate_limit:
   outbound_buckets:
@@ -127,7 +127,7 @@ rate_limit:
       burst: 10
       on_limit: fail
 `)
-		writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+		writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: k
@@ -158,7 +158,7 @@ channels:
 		writeFile(t, path, `
 server:
   listen_addr: "0.0.0.0:8080"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 rate_limit:
   outbound_buckets:
@@ -169,7 +169,7 @@ rate_limit:
       on_limit: wait
       max_wait: 2s
 `)
-		writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+		writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: k

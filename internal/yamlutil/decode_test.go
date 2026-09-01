@@ -54,7 +54,7 @@ func TestToMap(t *testing.T) {
 	})
 
 	t.Run("ToMap then Decode round-trips back to the original struct", func(t *testing.T) {
-		orig := sampleConfig{Name: "bob", Port: 9090}
+		orig := sampleConfig{Name: "bob", Port: 9696}
 		m, err := ToMap(orig)
 		if err != nil {
 			t.Fatalf("ToMap: %v", err)

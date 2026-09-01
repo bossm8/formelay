@@ -1,6 +1,6 @@
 # Configuration reference
 
-formelay reads two kinds of YAML: one global `config.yaml`, and one file per form under `forms_dir` (`forms.d/*.yaml` by default). Both are strictly decoded — an unknown key is a config-load error, not a silently ignored typo. Both are hot-reloaded (fsnotify watching the directories, or `SIGHUP`): a new config is fully validated, including parsing every template it references, before it replaces the running one. An invalid change is rejected and logged; the previous config keeps serving.
+formelay reads two kinds of YAML: one global `config.yaml`, and one file per form under `forms_dir` (`forms/*.yaml` by default). Both are strictly decoded — an unknown key is a config-load error, not a silently ignored typo. Both are hot-reloaded (fsnotify watching the directories, or `SIGHUP`): a new config is fully validated, including parsing every template it references, before it replaces the running one. An invalid change is rejected and logged; the previous config keeps serving.
 
 Working examples of everything below live in [`config.example/`](../config.example/) and are explained end-to-end in [examples.md](examples.md).
 
@@ -18,7 +18,7 @@ Working examples of everything below live in [`config.example/`](../config.examp
 
 ### `forms_dir`, `templates_dir`
 
-Paths (strings) to the per-form YAML directory and the directory template `path:` references resolve against. Defaults: `/etc/formelay/forms.d`, `/etc/formelay/templates` (matching the Docker image's expected mount points).
+Paths (strings) to the per-form YAML directory and the directory template `path:` references resolve against. Defaults: `/etc/formelay/forms`, `/etc/formelay/templates` (matching the Docker image's expected mount points).
 
 ### `security`
 
@@ -106,7 +106,7 @@ Inherited by any `email` channel that doesn't override the same field itself.
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `enabled` | bool | `true` | Whether `/metrics` is served. `/healthz`/`/readyz` are always served on this listener regardless. |
-| `listen_addr` | string | `0.0.0.0:9090` | Internal listener — keep this off the public internet. |
+| `listen_addr` | string | `0.0.0.0:9696` | Internal listener — keep this off the public internet. |
 | `path` | string | `/metrics` | Prometheus scrape path. |
 
 ### `health`
@@ -116,7 +116,7 @@ Inherited by any `email` channel that doesn't override the same field itself.
 | `liveness_path` | string | `/healthz` |
 | `readiness_path` | string | `/readyz` |
 
-## `forms.d/<slug>.yaml` (per form)
+## `forms/<slug>.yaml` (per form)
 
 ### Top level
 

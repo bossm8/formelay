@@ -51,7 +51,7 @@ func writeGlobalConfig(t *testing.T, dir string) {
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 server:
   listen_addr: "127.0.0.1:0"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 `)
 }
@@ -74,7 +74,7 @@ func TestAppCurrentNilBeforeReload(t *testing.T) {
 func TestAppReloadHappyPath(t *testing.T) {
 	dir := t.TempDir()
 	writeGlobalConfig(t, dir)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: "key"
@@ -115,7 +115,7 @@ func TestCompileFormPassesThroughChannelRateLimit(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 server:
   listen_addr: "127.0.0.1:0"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 rate_limit:
   outbound_buckets:
@@ -126,7 +126,7 @@ rate_limit:
       on_limit: wait
       max_wait: 3s
 `)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: "key"
@@ -183,7 +183,7 @@ channels:
 func TestAppReloadAllOrNothing(t *testing.T) {
 	dir := t.TempDir()
 	writeGlobalConfig(t, dir)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: "key"
@@ -201,7 +201,7 @@ channels:
 	}
 	first := a.Current()
 
-	writeFile(t, filepath.Join(dir, "forms.d", "broken.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "broken.yaml"), `
 id: broken
 auth:
   site_key: "key"
@@ -223,7 +223,7 @@ channels:
 func TestCompileFormSkipsDisabledChannel(t *testing.T) {
 	dir := t.TempDir()
 	writeGlobalConfig(t, dir)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: "key"
@@ -245,7 +245,7 @@ channels:
 func TestCompileFormUnknownChannelType(t *testing.T) {
 	dir := t.TempDir()
 	writeGlobalConfig(t, dir)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: "key"
@@ -266,7 +266,7 @@ channels:
 func TestCompileFormUnknownCaptchaProviderOnlyWhenEnabled(t *testing.T) {
 	dir := t.TempDir()
 	writeGlobalConfig(t, dir)
-	formPath := filepath.Join(dir, "forms.d", "contact.yaml")
+	formPath := filepath.Join(dir, "forms", "contact.yaml")
 	writeFile(t, formPath, `
 id: contact
 auth:
@@ -303,7 +303,7 @@ func TestCompileFormSpamRouteTemplateFallback(t *testing.T) {
 	dir := t.TempDir()
 	writeGlobalConfig(t, dir)
 	writeFile(t, filepath.Join(dir, "templates", "spam-review.tmpl"), `{"spam": true}`)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: "key"
@@ -337,7 +337,7 @@ spam_filter:
 func TestCompileFormSpamRouteTemplatesEmptyWhenNeitherSet(t *testing.T) {
 	dir := t.TempDir()
 	writeGlobalConfig(t, dir)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: "key"
@@ -367,7 +367,7 @@ spam_filter:
 func TestReloadFailsWhenSpamRouteMissingTemplate(t *testing.T) {
 	dir := t.TempDir()
 	writeGlobalConfig(t, dir)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: "key"
@@ -401,7 +401,7 @@ spam_filter:
 func TestCompileFormTemplateResolutionFailureFailsReload(t *testing.T) {
 	dir := t.TempDir()
 	writeGlobalConfig(t, dir)
-	writeFile(t, filepath.Join(dir, "forms.d", "contact.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "contact.yaml"), `
 id: contact
 auth:
   site_key: "key"

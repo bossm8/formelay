@@ -43,7 +43,7 @@ func TestWatchFiles(t *testing.T) {
 	t.Run("a file change triggers reload after the debounce window", func(t *testing.T) {
 		dir := t.TempDir()
 		globalPath := filepath.Join(dir, "config.yaml")
-		formsDir := filepath.Join(dir, "forms.d")
+		formsDir := filepath.Join(dir, "forms")
 		writeFile(t, globalPath, "x: 1\n")
 		if err := os.MkdirAll(formsDir, 0o755); err != nil {
 			t.Fatal(err)
@@ -69,7 +69,7 @@ func TestWatchFiles(t *testing.T) {
 	t.Run("multiple rapid writes within the debounce window trigger only one reload", func(t *testing.T) {
 		dir := t.TempDir()
 		globalPath := filepath.Join(dir, "config.yaml")
-		formsDir := filepath.Join(dir, "forms.d")
+		formsDir := filepath.Join(dir, "forms")
 		writeFile(t, globalPath, "x: 1\n")
 		if err := os.MkdirAll(formsDir, 0o755); err != nil {
 			t.Fatal(err)
@@ -111,7 +111,7 @@ func TestWatchFiles(t *testing.T) {
 	t.Run("a reload error is logged, not swallowed silently", func(t *testing.T) {
 		dir := t.TempDir()
 		globalPath := filepath.Join(dir, "config.yaml")
-		formsDir := filepath.Join(dir, "forms.d")
+		formsDir := filepath.Join(dir, "forms")
 		writeFile(t, globalPath, "x: 1\n")
 		if err := os.MkdirAll(formsDir, 0o755); err != nil {
 			t.Fatal(err)

@@ -218,7 +218,7 @@ func newIntegrationServer(t *testing.T) *Server {
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 server:
   listen_addr: "127.0.0.1:0"
-forms_dir: "`+filepath.Join(dir, "forms.d")+`"
+forms_dir: "`+filepath.Join(dir, "forms")+`"
 templates_dir: "`+filepath.Join(dir, "templates")+`"
 security:
   max_body_bytes: 65536
@@ -232,7 +232,7 @@ rate_limit:
     global: {rate: 10000, window: 1m, burst: 10000}
 `)
 
-	writeFile(t, filepath.Join(dir, "forms.d", "tagged.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "tagged.yaml"), `
 id: tagged
 allowed_origins: ["https://example.com"]
 auth:
@@ -265,7 +265,7 @@ channels:
       template_inline: '{"name": {{ .Fields.name | json }}, "message": {{ .Fields.message | json }}, "spam_suspected": {{ .Meta.SpamSuspected }}, "spam_reason": {{ .Meta.SpamReason | json }}}'
 `)
 
-	writeFile(t, filepath.Join(dir, "forms.d", "routed.yaml"), `
+	writeFile(t, filepath.Join(dir, "forms", "routed.yaml"), `
 id: routed
 allowed_origins: ["https://example.com"]
 auth:

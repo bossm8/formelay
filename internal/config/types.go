@@ -1,5 +1,5 @@
 // Package config defines the YAML schema (global config.yaml + per-form
-// forms.d/*.yaml), loads and validates it, and exposes a hot-reloadable
+// forms/*.yaml), loads and validates it, and exposes a hot-reloadable
 // Store. Types here are the raw, structural config — building runtime
 // objects (notifiers, verifiers, classifiers, parsed templates) from them is
 // the orchestration layer's job (see cmd/formelay), keeping this package
@@ -130,7 +130,7 @@ type HealthConfig struct {
 	ReadinessPath string `yaml:"readiness_path"`
 }
 
-// FormConfig is one forms.d/<slug>.yaml file.
+// FormConfig is one forms/<slug>.yaml file.
 type FormConfig struct {
 	ID             string             `yaml:"id"`
 	DisplayName    string             `yaml:"display_name"`

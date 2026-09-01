@@ -68,7 +68,7 @@ func runKeygen() {
 
 func runHealthcheck(args []string) {
 	fs := flag.NewFlagSet("healthcheck", flag.ExitOnError)
-	addr := fs.String("addr", "http://127.0.0.1:9090/healthz", "healthz URL to check")
+	addr := fs.String("addr", "http://127.0.0.1:9696/healthz", "healthz URL to check")
 	_ = fs.Parse(args)
 	resp, err := http.Get(*addr)
 	if err != nil {

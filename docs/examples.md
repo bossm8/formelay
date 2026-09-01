@@ -8,7 +8,7 @@ For the full field-by-field reference, see [configuration.md](configuration.md).
 
 The simplest real case: a few fields, a honeypot, delivery to both an inbox and a Discord channel, with CAPTCHA and AI spam filtering present in the config but switched off until you have real credentials.
 
-**Config**: [`config.example/forms.d/contact.yaml`](../config.example/forms.d/contact.yaml)
+**Config**: [`config.example/forms/contact.yaml`](../config.example/forms/contact.yaml)
 **Templates**: [`contact-email-subject.tmpl`](../config.example/templates/contact-email-subject.tmpl), [`contact-email-body.tmpl`](../config.example/templates/contact-email-body.tmpl), [`contact-discord.tmpl`](../config.example/templates/contact-discord.tmpl)
 
 ```html
@@ -26,7 +26,7 @@ The simplest real case: a few fields, a honeypot, delivery to both an inbox and 
 </form>
 ```
 
-That example uses `transport: form_field` (a hidden `_key` input) so it works with zero JavaScript — a real `<form>` POST straight to formelay, page-navigation redirect and all. `config.example/forms.d/contact.yaml` as shipped uses `transport: header` instead (the default, and the better choice whenever you *do* have JS available — see [Security model](../README.md#security-model) on why `header` avoids a `Referer`-based leak that `form_field` and URL-embedded tokens don't). The matching fetch call:
+That example uses `transport: form_field` (a hidden `_key` input) so it works with zero JavaScript — a real `<form>` POST straight to formelay, page-navigation redirect and all. `config.example/forms/contact.yaml` as shipped uses `transport: header` instead (the default, and the better choice whenever you *do* have JS available — see [Security model](../README.md#security-model) on why `header` avoids a `Referer`-based leak that `form_field` and URL-embedded tokens don't). The matching fetch call:
 
 ```js
 async function submitContact(form) {
@@ -57,7 +57,7 @@ curl -i -X POST http://localhost:8080/f/contact/submit \
 
 One field, posted from JS, routed straight to a Discord channel your marketing team watches — no email round-trip needed for something this lightweight. Tighter rate limits and a different honeypot field name (`company` reads naturally on a signup box) than the contact form, since public signup boxes attract more automated abuse per real visitor than a form someone deliberately fills in. Also the one example using `response_mode: async` (see [configuration.md](configuration.md#top-level)): a visitor doesn't need to wait on the Discord webhook round-trip to see "Subscribed!"
 
-**Config**: [`config.example/forms.d/newsletter.yaml`](../config.example/forms.d/newsletter.yaml)
+**Config**: [`config.example/forms/newsletter.yaml`](../config.example/forms/newsletter.yaml)
 **Template**: [`newsletter-discord.tmpl`](../config.example/templates/newsletter-discord.tmpl)
 
 ```html
@@ -86,7 +86,7 @@ document.getElementById("newsletter").addEventListener("submit", async (e) => {
 
 The fullest example: a required `subject` field alongside the usual name/email/message, both extra spam-defense layers present (disabled by default, see below), and `deliver_tagged` rather than `route` for the spam verdict, so a suspected-spam ticket still reaches support but visibly flagged, instead of being pulled out to a separate review channel. `spam_filter.include_fields: ["subject", "message"]` also means `name`/`email` never reach the AI provider at all, only the free-text fields relevant to judging spam do; delivery to email/Discord below still gets every field as usual.
 
-**Config**: [`config.example/forms.d/support.yaml`](../config.example/forms.d/support.yaml)
+**Config**: [`config.example/forms/support.yaml`](../config.example/forms/support.yaml)
 **Templates**: [`support-email-subject.tmpl`](../config.example/templates/support-email-subject.tmpl), [`support-email-body.tmpl`](../config.example/templates/support-email-body.tmpl), [`support-discord.tmpl`](../config.example/templates/support-discord.tmpl)
 
 ```html

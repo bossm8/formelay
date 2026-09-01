@@ -7,7 +7,7 @@ server:
   shutdown_grace_period: 15s
   trusted_proxies: []
 
-forms_dir: "/etc/formelay/forms.d"
+forms_dir: "/etc/formelay/forms"
 templates_dir: "/etc/formelay/templates"
 
 security:
@@ -64,7 +64,7 @@ reload:
 
 metrics:
   enabled: true
-  listen_addr: "0.0.0.0:9090"
+  listen_addr: "0.0.0.0:9696"
   path: "/metrics"
 
 health:

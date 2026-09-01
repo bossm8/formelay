@@ -35,7 +35,7 @@ LABEL org.opencontainers.image.title="formelay" \
 
 USER nonroot:nonroot
 
-EXPOSE 8080 9090
+EXPOSE 8080 9696
 
 HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
     CMD ["/usr/local/bin/formelay", "healthcheck"]

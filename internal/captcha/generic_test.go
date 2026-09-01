@@ -63,7 +63,7 @@ func TestNewFactoryPresetSurvivesFullConfigRoundTrip(t *testing.T) {
 	os.Setenv("TEST_CAPTCHA_PRESET_SECRET", "s3cret")
 	defer os.Unsetenv("TEST_CAPTCHA_PRESET_SECRET")
 
-	// Exactly what an operator's forms.d/*.yaml produces: only enabled,
+	// Exactly what an operator's forms/*.yaml produces: only enabled,
 	// provider, secret_env, and response_field set — everything else
 	// (verify_url, request_encoding, ...) is a config.CaptchaConfig zero
 	// value, which yamlutil.ToMap still serializes explicitly.
