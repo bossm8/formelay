@@ -243,6 +243,7 @@ spam_filter:
   enabled: true
   provider:
     type: fake-trigger
+  include_fields: ["message"]
   on_spam: deliver_tagged
   on_error: deliver
 channels:
@@ -275,6 +276,7 @@ spam_filter:
   enabled: true
   provider:
     type: fake-trigger
+  include_fields: ["message"]
   on_spam: route
   on_error: deliver
   route:
