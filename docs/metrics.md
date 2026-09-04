@@ -1,6 +1,6 @@
 # Metrics reference
 
-formelay exposes Prometheus metrics on the internal listener, alongside `/healthz`/`/readyz` — never on the public submission port. Controlled by `metrics.enabled`/`metrics.listen_addr`/`metrics.path` (see [configuration.md](configuration.md#metrics)); the example config serves them at `http://localhost:9696/metrics`.
+formelay exposes Prometheus metrics on the internal listener, alongside `/healthz`/`/readyz` — never on the public submission port. Controlled by `metrics.enabled`/`metrics.path` (see [configuration.md](configuration.md#metrics)) and `internal.listen_addr` (see [configuration.md](configuration.md#internal)); the example config serves them at `http://localhost:9696/metrics`.
 
 Every metric below is on a dedicated registry (`internal/metrics`), populated at the exact call site named — nothing here is a placeholder or "reserved for later."
 

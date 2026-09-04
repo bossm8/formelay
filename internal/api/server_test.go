@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -60,7 +61,7 @@ func TestNewMuxRouting(t *testing.T) {
 
 func TestNewInternalMuxLivenessReadiness(t *testing.T) {
 	s, _ := newTestServer(t, baseForm)
-	mux := s.NewInternalMux("/healthz", "/readyz")
+	mux := s.NewInternalMux("/healthz", "/readyz", "", nil)
 
 	t.Run("liveness always 200", func(t *testing.T) {
 		rec := httptest.NewRecorder()
@@ -80,11 +81,66 @@ func TestNewInternalMuxLivenessReadiness(t *testing.T) {
 
 	t.Run("readiness 503 when App.Current() is nil", func(t *testing.T) {
 		unloaded := &Server{App: app.New("/nonexistent/config.yaml", app.Registries{})}
-		mux := unloaded.NewInternalMux("/healthz", "/readyz")
+		mux := unloaded.NewInternalMux("/healthz", "/readyz", "", nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 		if rec.Code != http.StatusServiceUnavailable {
 			t.Fatalf("expected 503, got %d", rec.Code)
+		}
+	})
+}
+
+func TestNewInternalMuxReload(t *testing.T) {
+	s, _ := newTestServer(t, baseForm)
+
+	t.Run("POST calls the injected reload func and returns success", func(t *testing.T) {
+		called := false
+		mux := s.NewInternalMux("/healthz", "/readyz", "/reload", func() error {
+			called = true
+			return nil
+		})
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/reload", nil))
+		if !called {
+			t.Fatal("expected the reload func to be called")
+		}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"success":true`) {
+			t.Fatalf("expected a success:true body, got %s", rec.Body.String())
+		}
+	})
+
+	t.Run("a reload error is reported as 500 with the error in the body", func(t *testing.T) {
+		mux := s.NewInternalMux("/healthz", "/readyz", "/reload", func() error {
+			return errors.New("config: validate form \"contact\": boom")
+		})
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/reload", nil))
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "boom") {
+			t.Fatalf("expected the reload error in the response body, got %s", rec.Body.String())
+		}
+	})
+
+	t.Run("an empty reloadPath registers no route at all", func(t *testing.T) {
+		mux := s.NewInternalMux("/healthz", "/readyz", "", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/reload", nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 when reload.handle_http is disabled, got %d", rec.Code)
+		}
+	})
+
+	t.Run("a non-POST method is rejected", func(t *testing.T) {
+		mux := s.NewInternalMux("/healthz", "/readyz", "/reload", func() error { return nil })
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/reload", nil))
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d", rec.Code)
 		}
 	})
 }

@@ -67,8 +67,11 @@ No server-side code of your own required.
   Valkey to share limits across replicas.
 - **Built-In Observability.** Prometheus metrics to monitor your form usage.
 - **Stateless.** No database or stored submissions, at the cost of delivery
-  guarantees in rare cases such as forced restarts.
+  guarantees in rare cases such as forced restarts. [^1]
 - **Lightweight.** Few dependencies, distroless Docker image, single binary.
+
+[^1]: With the optional Valkey rate-limit backend as the exception to store
+ephemeral token-bucket counters across replicas, never submission content.
 
 ## Quick start
 

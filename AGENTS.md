@@ -14,6 +14,24 @@ repeat any of that — it only adds what those documents don't cover.
 There is no CONTRIBUTING.md or PR/issue template in this repo; this file
 is the whole brief.
 
+## No local Go toolchain — everything runs via Docker
+
+There is no Go install on the host, by design. Every `go` command (and
+`gofmt`, `govulncheck`, `deadcode`, ...) runs inside `golang:1.27-bookworm`
+via Docker, wrapped by the `make` targets in `Makefile` (`DOCKER_RUN`,
+module cache in the named volume `formelay-gomod`). **Use the `make`
+targets** (`build`, `vet`, `test`, `race`, `fmt`, `fmt-check`, `tidy`,
+`coverage`, `vulncheck`, `deadcode`, `test-integration`, `test-live`)
+rather than hand-crafting `docker run ... go ...` invocations — `make
+race` in particular already sets `CGO_ENABLED=1` (the default
+`DOCKER_RUN` uses `0`, since the rest of the build is
+`CGO_ENABLED=0`/static), so there's no need to reconstruct that
+override yourself. Live end-to-end verification (see "Verify live, not
+just with unit tests" below) similarly goes through `make docker-build`
++ `make compose-up`/`docker compose`, never a bare local binary. See
+[docs/develop.md](docs/develop.md) for the full target list and what CI
+runs on every push/PR.
+
 ## No dead code
 
 Every documented config field, every registered metric, every exported helper,

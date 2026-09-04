@@ -426,6 +426,46 @@ func TestValidateGlobal(t *testing.T) {
 		}
 	})
 
+	t.Run("defaults populate a non-empty internal.listen_addr", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		if g.Internal.ListenAddr == "" {
+			t.Fatal("expected a non-empty internal.listen_addr by default")
+		}
+	})
+
+	t.Run("empty internal.listen_addr rejected", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.Internal.ListenAddr = ""
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for empty internal.listen_addr")
+		}
+	})
+
+	t.Run("defaults enable the HTTP reload trigger with a non-empty path", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		if !g.Reload.HandleHTTP || g.Reload.HTTPPath == "" {
+			t.Fatalf("expected reload.handle_http=true and a non-empty http_path by default, got %+v", g.Reload)
+		}
+	})
+
+	t.Run("handle_http with an empty http_path is rejected", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.Reload.HandleHTTP = true
+		g.Reload.HTTPPath = ""
+		if err := ValidateGlobal(g); err == nil {
+			t.Fatal("expected error for reload.handle_http=true with an empty http_path")
+		}
+	})
+
+	t.Run("handle_http disabled tolerates an empty http_path", func(t *testing.T) {
+		g := DefaultGlobalConfig()
+		g.Reload.HandleHTTP = false
+		g.Reload.HTTPPath = ""
+		if err := ValidateGlobal(g); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
 	t.Run("valkey backend requires addresses", func(t *testing.T) {
 		g := DefaultGlobalConfig()
 		g.RateLimit.Backend = "valkey"

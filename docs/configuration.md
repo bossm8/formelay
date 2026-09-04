@@ -1,8 +1,8 @@
 # Configuration reference
 
-formelay reads two kinds of YAML: one global `config.yaml`, and one file per form under `forms_dir` (`forms/*.yaml` by default). Both are strictly decoded — an unknown key is a config-load error, not a silently ignored typo. Both are hot-reloaded (fsnotify watching the directories, or `SIGHUP`): a new config is fully validated, including parsing every template it references, before it replaces the running one. An invalid change is rejected and logged; the previous config keeps serving.
+formelay reads two kinds of YAML: one global `config.yaml`, and one file per form under `forms_dir` (`forms/*.yaml` by default). Both are strictly decoded — an unknown key is a config-load error. Both are hot-reloaded (fsnotify watching the directories, or `SIGHUP`): a new config is fully validated, including parsing every template it references, before it replaces the running one. An invalid change is rejected and logged while the previous config keeps serving.
 
-Working examples of everything below live in [`config.example/`](../config.example/) and are explained end-to-end in [examples.md](examples.md).
+Working examples of everything below are documented in [examples.md](examples.md).
 
 ## `config.yaml` (global)
 
@@ -100,16 +100,25 @@ Inherited by any `email` channel that doesn't override the same field itself.
 |---|---|---|---|
 | `watch_files` | bool | `true` | fsnotify-watch `config.yaml`'s directory and `forms_dir`. |
 | `handle_sighup` | bool | `true` | Reload on `SIGHUP`. |
+| `handle_http` | bool | `true` | Whether `http_path` is served on the internal listener (alongside `/healthz`/`/readyz`/`/metrics`). |
+| `http_path` | string | `/reload` | `POST` here to trigger a reload on demand — the same reload `watch_files`/`handle_sighup` already trigger, so it shows up in `formelay_config_reload_total`/`formelay_config_last_reload_timestamp_seconds` like any other reload. Responds `200 {"success":true}`, or `500 {"success":false,"error":"..."}` with the validation error if the new config is rejected (the previous config keeps serving, same as any other failed reload). Served on `internal.listen_addr` (below), sharing its security model — network isolation, no additional in-app auth. Required non-empty when `handle_http` is `true`. |
+
+### `internal`
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `listen_addr` | string | `0.0.0.0:9696` | Bind address for the internal listener — serves `/healthz`, `/readyz`, `reload.http_path` (above, if enabled), and `/metrics` (below, if enabled). Keep this off the public internet; see [Security model](../README.md#security-model). |
 
 ### `metrics`
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `enabled` | bool | `true` | Whether `/metrics` is served. `/healthz`/`/readyz` are always served on this listener regardless. |
-| `listen_addr` | string | `0.0.0.0:9696` | Internal listener — keep this off the public internet. |
+| `enabled` | bool | `true` | Whether `/metrics` is served on `internal.listen_addr`. `/healthz`/`/readyz` are always served there regardless. |
 | `path` | string | `/metrics` | Prometheus scrape path. |
 
 ### `health`
+
+Served on `internal.listen_addr` (above).
 
 | Field | Type | Default |
 |---|---|---|

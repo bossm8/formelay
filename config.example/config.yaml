@@ -61,10 +61,17 @@ logging:
 reload:
   watch_files: true
   handle_sighup: true
+  handle_http: true
+  http_path: "/reload"
+
+# Bind address for the internal listener: /healthz, /readyz,
+# reload.http_path (above), and /metrics (below) all share this one
+# address. Keep it off the public internet.
+internal:
+  listen_addr: "0.0.0.0:9696"
 
 metrics:
   enabled: true
-  listen_addr: "0.0.0.0:9696"
   path: "/metrics"
 
 health:

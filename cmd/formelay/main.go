@@ -208,14 +208,19 @@ func runServe(args []string) {
 	}
 
 	// Liveness/readiness always live on the internal listener; /metrics is
-	// added to the same mux when enabled.
-	internalMux := server.NewInternalMux(global.Health.LivenessPath, global.Health.ReadinessPath)
+	// added to the same mux when enabled, and so is a reload trigger when
+	// reload.handle_http is enabled.
+	reloadPath := ""
+	if global.Reload.HandleHTTP {
+		reloadPath = global.Reload.HTTPPath
+	}
+	internalMux := server.NewInternalMux(global.Health.LivenessPath, global.Health.ReadinessPath, reloadPath, reloadFn)
 	if global.Metrics.Enabled {
 		internalMux.Handle("GET "+global.Metrics.Path, promHandler(m))
 	}
-	internalServer := &http.Server{Addr: global.Metrics.ListenAddr, Handler: internalMux}
+	internalServer := &http.Server{Addr: global.Internal.ListenAddr, Handler: internalMux}
 	go func() {
-		log.Info("internal (health/metrics) listening", "addr", global.Metrics.ListenAddr)
+		log.Info("internal (health/metrics/reload) listening", "addr", global.Internal.ListenAddr)
 		if err := internalServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error("internal server error", "error", err)
 		}

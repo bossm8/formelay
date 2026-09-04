@@ -54,6 +54,12 @@ func ValidateGlobal(g *GlobalConfig) error {
 			return fmt.Errorf("server.tls.key_file: %w", err)
 		}
 	}
+	if g.Reload.HandleHTTP && g.Reload.HTTPPath == "" {
+		return fmt.Errorf("reload.http_path is required when reload.handle_http is true")
+	}
+	if g.Internal.ListenAddr == "" {
+		return fmt.Errorf("internal.listen_addr is required")
+	}
 	return nil
 }
 

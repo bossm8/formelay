@@ -17,6 +17,7 @@ type GlobalConfig struct {
 	SMTPDefaults SMTPDefaultsConfig `yaml:"smtp_defaults"`
 	Logging      LoggingConfig      `yaml:"logging"`
 	Reload       ReloadConfig       `yaml:"reload"`
+	Internal     InternalConfig     `yaml:"internal"`
 	Metrics      MetricsConfig      `yaml:"metrics"`
 	Health       HealthConfig       `yaml:"health"`
 }
@@ -117,12 +118,25 @@ type LoggingConfig struct {
 type ReloadConfig struct {
 	WatchFiles   bool `yaml:"watch_files"`
 	HandleSIGHUP bool `yaml:"handle_sighup"`
+	// HandleHTTP/HTTPPath expose a POST endpoint on the internal listener
+	// that triggers a reload on demand — a third trigger alongside
+	// WatchFiles/HandleSIGHUP, useful when file-watch debouncing or
+	// signal delivery isn't convenient (e.g. a CI/CD deploy step).
+	HandleHTTP bool   `yaml:"handle_http"`
+	HTTPPath   string `yaml:"http_path"`
+}
+
+// InternalConfig is the internal listener's bind address — shared by
+// every non-public route: /healthz, /readyz, reload.http_path (if
+// enabled), and /metrics (if enabled). Its own section rather than
+// nested under MetricsConfig, since it isn't metrics-specific.
+type InternalConfig struct {
+	ListenAddr string `yaml:"listen_addr"`
 }
 
 type MetricsConfig struct {
-	Enabled    bool   `yaml:"enabled"`
-	ListenAddr string `yaml:"listen_addr"`
-	Path       string `yaml:"path"`
+	Enabled bool   `yaml:"enabled"`
+	Path    string `yaml:"path"`
 }
 
 type HealthConfig struct {

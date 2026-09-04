@@ -51,12 +51,17 @@ func (s *Server) withInFlightGauge(next http.Handler) http.Handler {
 	})
 }
 
-// NewInternalMux builds the internal-only mux: liveness/readiness. The
-// caller adds /metrics to the same mux (see cmd/formelay).
-func (s *Server) NewInternalMux(livenessPath, readinessPath string) *http.ServeMux {
+// NewInternalMux builds the internal-only mux: liveness/readiness, and a
+// reload trigger when reloadPath is non-empty (empty means reload.
+// handle_http is disabled — see cmd/formelay). The caller adds /metrics
+// to the same mux (see cmd/formelay).
+func (s *Server) NewInternalMux(livenessPath, readinessPath, reloadPath string, reload func() error) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+livenessPath, s.handleLiveness)
 	mux.HandleFunc("GET "+readinessPath, s.handleReadiness)
+	if reloadPath != "" {
+		mux.HandleFunc("POST "+reloadPath, s.handleReload(reload))
+	}
 	return mux
 }
 
@@ -70,6 +75,16 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleReload(reload func() error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := reload(); err != nil {
+			respondJSON(w, http.StatusInternalServerError, response{Success: false, Error: err.Error()})
+			return
+		}
+		respondJSON(w, http.StatusOK, response{Success: true})
+	}
 }
 
 func (s *Server) handlePreflight(w http.ResponseWriter, r *http.Request) {

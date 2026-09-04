@@ -88,11 +88,11 @@ func DefaultGlobalConfig() *GlobalConfig {
 			Format: "json",
 			Audit:  AuditConfig{Enabled: true},
 		},
-		Reload: ReloadConfig{WatchFiles: true, HandleSIGHUP: true},
+		Reload:   ReloadConfig{WatchFiles: true, HandleSIGHUP: true, HandleHTTP: true, HTTPPath: "/reload"},
+		Internal: InternalConfig{ListenAddr: "0.0.0.0:9696"},
 		Metrics: MetricsConfig{
-			Enabled:    true,
-			ListenAddr: "0.0.0.0:9696",
-			Path:       "/metrics",
+			Enabled: true,
+			Path:    "/metrics",
 		},
 		Health: HealthConfig{
 			LivenessPath:  "/healthz",
