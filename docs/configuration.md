@@ -1,10 +1,15 @@
 # Configuration reference
 
-formelay reads two kinds of YAML: one global `config.yaml`, and one file per form under `forms_dir` (`forms/*.yaml` by default). Both are strictly decoded — an unknown key is a config-load error. Both are hot-reloaded (fsnotify watching the directories, or `SIGHUP`): a new config is fully validated, including parsing every template it references, before it replaces the running one. An invalid change is rejected and logged while the previous config keeps serving.
+formelay reads two kinds of YAML: one global `config.yaml`, and one file per
+form under `forms_dir` (`forms/*.yaml` by default). Both are strictly decoded
+and hot-reloaded (fsnotify watching the directories, `SIGHUP` or a HTTP `POST`
+to the internal reload endpoint). A new config is fully validated before
+replacing a current one, including parsing every template it references. An
+invalid change is rejected and logged while the previous config keeps serving.
 
-Working examples of everything below are documented in [examples.md](examples.md).
+Working examples of the settings below are documented in [examples.md](examples.md).
 
-## `config.yaml` (global)
+## Global `config.yaml`
 
 ### `server`
 
@@ -12,13 +17,15 @@ Working examples of everything below are documented in [examples.md](examples.md
 |---|---|---|---|
 | `listen_addr` | string | `0.0.0.0:8080` | Public submission API listener. |
 | `read_timeout`, `write_timeout`, `idle_timeout`, `read_header_timeout` | duration | `read_header_timeout` falls back to `5s` if unset; others `0` (no timeout) | Standard `net/http.Server` timeouts. |
-| `shutdown_grace_period` | duration | `15s` | How long graceful shutdown waits for in-flight requests. |
-| `tls.enabled`, `tls.cert_file`, `tls.key_file` | bool, string, string | — | If enabled, the public submission listener terminates TLS itself (`cert_file`/`key_file` are required and must exist, checked at config load). Most deployments instead put a reverse proxy in front and leave this off; it's here for the simple case of no proxy in front at all. Only the public listener is affected, the internal health/metrics listener always stays plain HTTP. |
-| `trusted_proxies` | []string | `[]` | CIDRs (or bare IPs, treated as `/32`/`/128`) allowed to set `X-Forwarded-For`. Only trust your actual reverse proxy's address here. |
+| `shutdown_grace_period` | duration | `15s` | How long graceful shutdown waits for in-flight requests. If aync delivery is enabled, this should be set long enough to ensure all forms still in-flight are delivered correctly as the sender has no failure feedback in that case. |
+| `tls.enabled`, `tls.cert_file`, `tls.key_file` | bool, string, string | — | If enabled, the public submission listener terminates TLS itself (`cert_file`/`key_file` are required and must exist, checked at config load). Only the public listener is affected, the internal health/metrics listener always stays plain HTTP. |
+| `trusted_proxies` | []string | `[]` | CIDRs (or bare IPs, treated as `/32`/`/128`) allowed to set `X-Forwarded-For`. |
 
 ### `forms_dir`, `templates_dir`
 
-Paths (strings) to the per-form YAML directory and the directory template `path:` references resolve against. Defaults: `/etc/formelay/forms`, `/etc/formelay/templates` (matching the Docker image's expected mount points).
+Paths to the per-form YAML directory and the directory template `path:`
+references resolve against.
+Defaults: `/etc/formelay/forms`, `/etc/formelay/templates`
 
 ### `security`
 
@@ -33,17 +40,27 @@ Paths (strings) to the per-form YAML directory and the directory template `path:
 | `backend` | `memory` \| `valkey` | `memory` | See [Rate limiting](#rate-limiting) below. |
 | `default.per_ip`, `default.per_form`, `default.global` | rate rule | — | See [Rate rules](#rate-rules). Applied unless a form overrides `per_ip`/`per_form`. |
 | `cleanup_interval`, `bucket_idle_ttl` | duration | `5m`, `10m` | Memory backend only: how often the janitor runs, and how long an idle bucket survives. |
-| `valkey.addresses` | []string | — | Required when `backend: valkey`. |
-| `valkey.password_env` | string | — | Env var holding the Valkey password (empty = no auth). |
-| `valkey.db` | int | `0` | Valkey `SELECT` database index. |
-| `valkey.dial_timeout` | duration | client default | Connection timeout. |
-| `valkey.key_prefix` | string | `""` | Prefixed onto every rate-limit key, useful if multiple services share one Valkey. |
-| `valkey.on_error` | `allow` \| `deny` | `allow` | What happens to a request if Valkey itself is unreachable *after* startup (see [Rate limiting](#rate-limiting)). |
+| `valkey` | map[string]object | `{}` | Valkey configuration, required when `backend: valkey` - see below. |
 | `outbound_buckets` | map[string]object | `{}` | Named, shared outbound rate-limit buckets — see below. |
+
+#### `valkey`
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `addresses` | []string | — | Where Valkey is reachable. |
+| `password_env` | string | — | Env var holding the Valkey password (empty = no auth). |
+| `db` | int | `0` | Valkey `SELECT` database index. |
+| `dial_timeout` | duration | client default | Connection timeout. |
+| `key_prefix` | string | `""` | Prefixed onto every rate-limit key, useful if multiple services share one Valkey. |
+| `on_error` | `allow` \| `deny` | `allow` | What happens to a request if Valkey itself is unreachable *after* startup (see [Rate limiting](#rate-limiting)). |
 
 #### `outbound_buckets`
 
-Each entry is `{rate, window, burst, on_limit, max_wait}` — the same shape and semantics as a channel's outbound [`rate_limit`](#rate_limit-optional) (`rate`/`window`/`burst` required and must all be `> 0`; `on_limit` is `wait` (default) or `fail`; `max_wait` only applies to `wait`). A channel's or `spam_filter`'s `rate_limit` block references one of these entries by name via `shared_key`, instead of defining its own numbers, when it needs to pool with another outbound call that genuinely hits the same real-world quota (e.g. two email channels through the same SMTP account, or a channel and the spam filter billed against the same provider account):
+Shared rate-limit buckets which can be referenced by outbound channels and ai
+spam classifiers in case multiple forms use the same provider. A channel's or
+spam filter's `rate_limit` block can reference one of the shared buckets via
+`shared_key` instead of defining it's own bucket. The configuration is the same
+as the channel's oubound [`rate_limit`](#rate_limit-optional).
 
 ```yaml
 rate_limit:
@@ -56,31 +73,51 @@ rate_limit:
       max_wait: 5s
 ```
 
+On a channel, or spam_filter, the `primary-smtp` can then be referenced:
+
 ```yaml
-# on a channel, or spam_filter, elsewhere in a form:
 rate_limit:
   shared_key: "primary-smtp"
 ```
 
-**`shared_key` and the inline `rate`/`window`/`burst`/`on_limit`/`max_wait` fields are mutually exclusive** — a block is either `{shared_key: "..."}` alone or the inline fields alone, never both; config load rejects a block that sets both. This isn't just a style rule: the underlying token bucket is looked up purely by key, but a naive design would let each caller pass its own numbers on every check, so two blocks sharing a key with *different* numbers would silently disagree about the bucket's capacity depending on which one happened to check most recently. Defining the numbers exactly once, in `outbound_buckets`, makes that impossible — every reference to the same `shared_key` is guaranteed to agree, because there's only one place the numbers can come from. A `shared_key` naming an entry that doesn't exist in `outbound_buckets` is also a config-load error.
+> **`shared_key` and the inline fields
+  (`rate`/`window`/`burst`/`on_limit`/`max_wait`) are mutually exclusive**
 
 #### Rate rules
 
-A rate rule is `{rate: <float>, window: <duration>, burst: <float>}` — a token bucket refilling at `rate` tokens per `window`, holding at most `burst` tokens. Example: `{rate: 5, window: 1m, burst: 5}` allows a burst of 5 immediately, then steady-state 5/minute.
+```yaml
+{rate: <float>, window: <duration>, burst: <float>}
+```
+
+A rate rule is a token bucket refilling at `rate` tokens per `window`, holding
+at most `burst` tokens.
+
+Example: `{rate: 5, window: 1m, burst: 5}` allows a burst of 5 immediately, then
+steady-state 5/minute.
 
 #### Rate limiting
 
-- **`memory`**: in-process, sharded token buckets. Correct for a single running instance; state is lost on restart and isn't shared across replicas.
-- **`valkey`**: bucket state lives in Valkey, updated atomically via a Lua script, so multiple formelay replicas share the same limits. `New()` connects eagerly at startup — an unreachable Valkey at boot is a hard startup failure. `on_error` only governs a *later* outage (a `Do()` call failing after a successful connection): `allow` (default) degrades to unrate-limited rather than rejecting all traffic; `deny` fails closed.
+- **`memory`**: in-process, sharded token buckets. Ok for a single running
+  instance as state is lost on restart and isn't shared across replicas.
+- **`valkey`**: bucket state lives in [Valkey](https://valkey.io), updated
+  atomically via a Lua script, to ensure a consistent state accross replicas.
+  Connection is established at startup and an unreachable Valkey at boot is
+  treated as startup failure. `on_error` then governs a runtime outage: `allow`
+  (default) degrades to non rate-limited (allowing all requests) while
+  `deny` rejects all requests.
 
 ### `smtp_defaults`
 
 Inherited by any `email` channel that doesn't override the same field itself.
+It's optional and recommendation is to leave it unsed in multi-tenant like
+deployments where form configs are not necessarily managed by the operator.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `host`, `port` | string, int | SMTP server. |
-| `username`, `password_env` | string, string | SMTP auth; `password_env` names an env var, never a literal password. |
+| `host` | string | SMTP server address. |
+| `port` | int | SMTP server port. |
+| `username` | string | SMTP auth username |
+| `password_env` | string | SMTP auth password env var, never a literal password. |
 | `starttls` | bool | Use STARTTLS. |
 | `from` | string | Default `From:` address. |
 | `timeout` | duration | SMTP dial/send timeout. |
@@ -89,36 +126,41 @@ Inherited by any `email` channel that doesn't override the same field itself.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `level` | `debug` \| `info` \| `warn` \| `error` | `info` | Minimum level for the general application log (not the audit log, which always emits regardless of this). Applied once at startup; a later config reload does not change it live, restart to pick up a change. |
+| `level` | `debug` \| `info` \| `warn` \| `error` | `info` | Minimum level for the general application log. Applied once at startup, i.e. a later config reload does not change it live, restart to pick up a change. |
 | `format` | `json` \| `text` | `json` | Output format for the general application log. |
-| `audit.enabled` | bool | `true` | Whether the structured per-submission audit record is emitted at all. |
-| `audit.log_field_values` | bool | `false` | If true, audit records include submitted field *values* (PII), not just metadata. Off by default deliberately — see [Security model](../README.md#security-model). The audit log itself is always JSON regardless of `format` above, that's the point (machine-parseable), so there's no separate `audit.format`. |
+| `audit.enabled` | bool | `true` | Enable/Disable structured (json) audit logs. |
+| `audit.log_field_values` | bool | `false` | If true, audit records include submitted field *values* (and thus potentially PII), not just metadata. The audit log itself is always JSON regardless of `format` above. Enable only if strictly required |
 
 ### `reload`
+
+Configure how formelay reloads configuration changes.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `watch_files` | bool | `true` | fsnotify-watch `config.yaml`'s directory and `forms_dir`. |
 | `handle_sighup` | bool | `true` | Reload on `SIGHUP`. |
-| `handle_http` | bool | `true` | Whether `http_path` is served on the internal listener (alongside `/healthz`/`/readyz`/`/metrics`). |
-| `http_path` | string | `/reload` | `POST` here to trigger a reload on demand — the same reload `watch_files`/`handle_sighup` already trigger, so it shows up in `formelay_config_reload_total`/`formelay_config_last_reload_timestamp_seconds` like any other reload. Responds `200 {"success":true}`, or `500 {"success":false,"error":"..."}` with the validation error if the new config is rejected (the previous config keeps serving, same as any other failed reload). Served on `internal.listen_addr` (below), sharing its security model — network isolation, no additional in-app auth. Required non-empty when `handle_http` is `true`. |
+| `handle_http` | bool | `true` | Enable serving `http_path` on the internal listener. |
+| `http_path` | string | `/reload` | The path where to `POST` to trigger a reload on demand. Only applies when `handle_http` is true and needs a non-empty value in that case. Responds `200 {"success":true}`, or `500 {"success":false,"error":"..."}` with the validation error if the new config is rejected . Served on `internal.listen_addr`. |
+
+> For all reload mechanisms: when reloading fails with an error, the previous
+config keeps serving
 
 ### `internal`
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `listen_addr` | string | `0.0.0.0:9696` | Bind address for the internal listener — serves `/healthz`, `/readyz`, `reload.http_path` (above, if enabled), and `/metrics` (below, if enabled). Keep this off the public internet; see [Security model](../README.md#security-model). |
+| `listen_addr` | string | `0.0.0.0:9696` | Bind address for the internal listener. Serves `/healthz`, `/readyz`, `reload.http_path` (if enabled), and `/metrics` (if enabled). **Keep this off the public internet.** |
 
 ### `metrics`
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `enabled` | bool | `true` | Whether `/metrics` is served on `internal.listen_addr`. `/healthz`/`/readyz` are always served there regardless. |
-| `path` | string | `/metrics` | Prometheus scrape path. |
+| `enabled` | bool | `true` | Enable the `metrics.path` endpoint for serving Prometheus metrics on `internal.listen_addr`. |
+| `path` | string | `/metrics` | Prometheus scrape path. Required non-empty when `metrics.enabled` is `true`. |
 
 ### `health`
 
-Served on `internal.listen_addr` (above).
+Served on `internal.listen_addr`.
 
 | Field | Type | Default |
 |---|---|---|
@@ -131,27 +173,27 @@ Served on `internal.listen_addr` (above).
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `id` | string | — | Required. Used in the URL (`/f/<id>/submit`) and as the map key — must be unique across `forms_dir`. |
+| `id` | string | — | Required. Used in the URL (`/f/<id>/submit`) and as the map key and must thus be unique across `forms_dir`. |
 | `display_name` | string | — | Human-readable name, available to templates as `.Form.DisplayName`. |
-| `enabled` | bool | `true` | Set `false` to keep a form's config in place but stop serving it (`404`). |
-| `allowed_origins` | []string | — | Exact origins (`https://example.com`) or a `https://*.example.com` wildcard-subdomain entry. **Development only:** the literal entry `DANGEROUS_DISABLED` disables origin/CORS checking entirely for this form, including a submission with no `Origin` header at all — unlike every other entry, which never matches a missing origin. It exists purely so local testing (`file://` pages, arbitrary dev-server ports) isn't blocked by the allowlist. Every config reload while it's set logs a warning naming the form, on every single reload for as long as it stays configured, specifically so it can't be left on unnoticed. Never use it on anything reachable from the internet — origin allowlisting is one of formelay's real defense layers (see [Security model](../README.md#security-model)), and this removes it completely. |
-| `channels_required` | `any` \| `all` \| `none` | `any` | What counts as delivery success for the HTTP response: at least one channel, every channel, or don't care (always `200`). **Only affects the response in `response_mode: sync`** — in `async` mode the response is already sent before dispatch runs, so this still governs the eventual audit-log/metrics outcome, just not what the client saw. |
+| `enabled` | bool | `true` | Set `false` to keep a form's config in place but stop serving it (results in `404`). |
+| `allowed_origins` | []string | — | Exact origins (`https://example.com`) or a `https://*.example.com` wildcard-subdomain entry. |
+| `channels_required` | `any` \| `all` \| `none` | `any` | What counts as delivery success for the HTTP response: at least one channel, every channel, or don't care (always `200`). **Only affects the response in `response_mode: sync`**. |
 | `response_mode` | `sync` \| `async` | `sync` | `sync` (default): the HTTP response waits for the AI spam filter and delivery to actually finish. `async`: the response is sent immediately once CAPTCHA passes (CAPTCHA itself is always synchronous, in either mode), and the AI spam filter + delivery run in a background goroutine. In `async` mode, a `200` response means "accepted," not "delivered" — the real outcome (`success`, `spam_dropped_ai`, `delivery_failed`) is only visible via the audit log and `formelay_submissions_total`, arriving after the response. Submissions still in flight when formelay shuts down get up to `server.shutdown_grace_period` to finish before being abandoned. |
 
 ### `auth`
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `site_key` | string | — | Required. A **public** capability token — generate with `formelay keygen`. Not a secret against a targeted attacker, but required to submit at all; see [Security model](../README.md#security-model). |
-| `transport` | `header` \| `form_field` | `header` | Where the submitted key is read from. `header` avoids leaking the key via `Referer`; use `form_field` only for a plain `<form>` with no JavaScript. |
+| `site_key` | string | — | Required. A **public** capability token which can be generatet with `formelay keygen`. This is **not a secret** against a targeted attacker, but required to submit at all. See [Security model](../README.md#security-model). |
+| `transport` | `header` \| `form_field` | `header` | Where the submitted key is read from. Use `form_field` only for a plain `<form>` with no JavaScript. |
 | `header_name` | string | `X-Formelay-Site-Key` | Header name, when `transport: header`. |
-| `form_field_name` | string | — | Required when `transport: form_field`; the form field name carrying the key. |
+| `form_field_name` | string | — | Required when `transport: form_field` to name the form field name carrying the key. |
 
 ### `honeypot`
 
 | Field | Type | Meaning |
 |---|---|---|
-| `field_name` | string | A hidden form field name; a non-empty value here means a bot filled in every field, including ones a human never sees. Empty/unset disables the check. |
+| `field_name` | string | A hidden form field name. A non-empty value submitted here means a bot filled in a field a human does not see (needs to be configured accordingly in the form). Empty/unset disables the check. |
 
 ### `captcha` (optional)
 

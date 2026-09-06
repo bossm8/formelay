@@ -64,8 +64,9 @@ No server-side code of your own required.
 - **Hot-Reloadable Config.** YAML changes apply live, with rollback on invalid
   config.
 - **Pluggable Rate Limiting.** Inbound and outbound. In-memory by default, or
-  Valkey to share limits across replicas.
-- **Built-In Observability.** Prometheus metrics to monitor your form usage.
+  [Valkey](https://valkey.io/) to share limits across replicas.
+- **Built-In Observability.** [Prometheus](https://prometheus.io/) metrics to
+  monitor your form usage.
 - **Stateless.** No database or stored submissions, at the cost of delivery
   guarantees in rare cases such as forced restarts. [^1]
 - **Lightweight.** Few dependencies, distroless Docker image, single binary.
@@ -101,10 +102,10 @@ but disabled by default), walked through in detail in
 
 By default it exposes:
 
-| Port   | Purpose                                                 |
-|--------|---------------------------------------------------------|
-| `8080` | Public submission API                                   |
-| `9696` | Internal `/healthz`, `/readyz` and `/metrics` endpoints |
+| Port   | Purpose                                                            |
+|--------|--------------------------------------------------------------------|
+| `8080` | Public submission API                                              |
+| `9696` | Internal `/healthz`, `/readyz`, `/metrics` and `/reload` endpoints |
 
 Try the contact form:
 
@@ -117,6 +118,8 @@ curl -i -X POST http://localhost:8080/f/contact/submit \
   --data-urlencode "email=alice@example.com" \
   --data-urlencode "message=Hello there"
 ```
+
+> [!NOTE] formelay only supports `POST` on the form endpoint, no `GET`, so make sure your HTML form sets `method=POST`.
 
 With the placeholder credentials from `.env.example`, this exercises the full
 pipeline (auth, rate limiting, honeypot, sanitization, template rendering) and

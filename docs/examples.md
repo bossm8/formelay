@@ -26,7 +26,9 @@ The simplest real case: a few fields, a honeypot, delivery to both an inbox and 
 </form>
 ```
 
-That example uses `transport: form_field` (a hidden `_key` input) so it works with zero JavaScript — a real `<form>` POST straight to formelay, page-navigation redirect and all. `config.example/forms/contact.yaml` as shipped uses `transport: header` instead (the default, and the better choice whenever you *do* have JS available — see [Security model](../README.md#security-model) on why `header` avoids a `Referer`-based leak that `form_field` and URL-embedded tokens don't). The matching fetch call:
+> formelay only supports `POST` on the form endpoint, no `GET`, so make sure your HTML form sets `method=POST`.
+
+That example uses `transport: form_field` (a hidden `_key` input) so it works with zero JavaScript — a real `<form>` `POST` straight to formelay, page-navigation redirect and all. `config.example/forms/contact.yaml` as shipped uses `transport: header` instead (the default, and the better choice whenever you *do* have JS available). The matching fetch call:
 
 ```js
 async function submitContact(form) {
