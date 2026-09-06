@@ -7,7 +7,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/prometheus/client_golang v1.24.1
-	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/client_model v0.6.3
 	github.com/valkey-io/valkey-go v1.0.77
 	github.com/wneessen/go-mail v0.8.1
 	golang.org/x/text v0.41.0
