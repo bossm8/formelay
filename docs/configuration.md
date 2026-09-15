@@ -66,12 +66,19 @@ as the channel's oubound [`rate_limit`](#rate_limit-optional).
 rate_limit:
   outbound_buckets:
     primary-smtp:
-      rate: 10
-      window: 1m
-      burst: 10
-      on_limit: wait
-      max_wait: 5s
+      rate: 10            # required: tokens per window
+      window: 1m          # required
+      burst: 10           # required: max burst size
+      on_limit: wait      # "wait" (default) or "fail"
+      max_wait: 5s        # only used when on_limit is "wait"
+                          #   how long to block for a token before giving up as
+                          #   a failed delivery
 ```
+
+`on_limit: wait` blocks (up to `max_wait`) for capacity before sending.
+formelay has no queue, so this is the only way to avoid dropping a delivery
+outright under a legitimate burst. `on_limit: fail` fails the delivery
+immediately instead, with zero added latency.
 
 On a channel, or spam_filter, the `primary-smtp` can then be referenced:
 
@@ -80,8 +87,13 @@ rate_limit:
   shared_key: "primary-smtp"
 ```
 
-> **`shared_key` and the inline fields
-  (`rate`/`window`/`burst`/`on_limit`/`max_wait`) are mutually exclusive**
+> **`shared_key` and the inline fields (`rate`/`window`/`burst`/`on_limit`/`max_wait`) are mutually exclusive**
+
+> This uses the same backend as `rate_limit.backend` above (`memory` or `valkey`).
+With `valkey`, an outbound limit is automatically shared across replicas too,
+which matters once there's more than one formelay instance hitting the same
+provider quota.
+
 
 #### Rate rules
 
@@ -193,40 +205,43 @@ Served on `internal.listen_addr`.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `field_name` | string | A hidden form field name. A non-empty value submitted here means a bot filled in a field a human does not see (needs to be configured accordingly in the form). Empty/unset disables the check. |
+| `field_name` | string | Honeypot form field name. A non-empty value submitted here means a bot filled in a field a human does not see (needs to be configured accordingly in the form, see [examples.md](./examples.md)). Empty/unset disables the check. |
 
 ### `captcha` (optional)
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `enabled` | bool | `false` | |
-| `provider` | `turnstile` \| `hcaptcha` \| `recaptcha_v2` \| `recaptcha_v3` \| `generic` | — | A named preset fills in `verify_url` and the param/field names below; `generic` requires you to set them yourself. |
+| `provider` | `turnstile` \| `hcaptcha` \| `recaptcha_v2` \| `recaptcha_v3` \| `generic` | — | A named preset which fills in `verify_url` and the `*_param`/`*_field` names below. `generic` requires you to set them yourself. |
 | `secret_env` | string | — | Env var holding the provider's server-side secret. |
 | `response_field` | string | — | The submitted field name carrying the widget's response token. |
-| `on_error` | `fail_open` \| `fail_closed` | `fail_closed` | What happens if the verify call itself errors/times out. This is a hard security gate — unlike the AI classifier's `on_error`, `fail_closed` is the sane default. |
-| `verify_url`, `request_encoding` (`form`\|`json`), `secret_param`, `response_param`, `remoteip_param`, `success_field`, `score_field`, `min_score` | — | preset-filled | Override any of these to point at a provider without a named preset — see [Extending with a new provider](examples.md#extending-with-a-new-captcha-provider). |
+| `on_error` | `fail_open` \| `fail_closed` | `fail_closed` | What happens if the server-side verify call itself errors/times out. |
+| `verify_url`, `request_encoding` (`form`\|`json`), `secret_param`, `response_param`, `remoteip_param`, `success_field`, `score_field`, `min_score` | — | preset-filled | Override any of these to point at a provider without a named preset, see [Extending with a new provider](examples.md#extending-with-a-new-captcha-provider). |
 
 ### `spam_filter` (optional)
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `enabled` | bool | `false` | |
-| `provider.type` | string | — | Currently `ai` (OpenAI-compatible chat-completions). |
-| `provider.api_base`, `provider.api_key_env`, `provider.model`, `provider.timeout` | — | — | Provider connection details. |
-| `system_template`, `system_template_inline` | string | built-in default | Override the classifier's system prompt. Leave unset to use the [embedded default](../internal/spamfilter/ai/defaults/) (see [Security model](../README.md#security-model)). This can be helpful if you want to adjust e.g. suspected spam instructions tailored to your form content. The model however must output exactly two lines as the default template describes. |
-| `user_template`, `user_template_inline` | string | built-in default | Override how submitted fields are rendered into the prompt. |
-| `include_fields` | []string | `[]` (no fields) | Allowlist restricting which submitted fields are sent to the classifier at all, before templating, so a custom `user_template` can't accidentally leak an excluded field back in. **Privacy-safe by default: empty/unset sends zero fields**, not every field — the AI classifier effectively does nothing useful until you explicitly list which fields it should see. Use it to send only the free-text fields that actually matter for judging spam (`message`, `subject`, ...) while keeping PII (`email`, `phone`, ...) out of the third-party AI call entirely. Delivery to `channels` is never affected by this, only the classifier call is. |
+| `provider.type` | string | — | Currently only `ai` is supported, which performs OpenAI-compatible chat-completions. |
+| `provider.api_base` | string | - | Base url to the OpenAI API (e.g. `http://localhost:11343/v1` for [`ollama`](https://docs.ollama.com/api/openai-compatibility)). |
+| `provider.api_key_env` | string | - | Environment variable name containing the API key to authenticate to the provider. |
+| `provider.model` | string | - | Which model to use. |
+| `provider.timeout` | string | — | Timeout when talking to the provider API. |
+| `system_template`, `system_template_inline` | string | built-in default | Override the classifier's system prompt. Leave unset to use the [embedded default](../internal/spamfilter/ai/defaults/system.tmpl). This can be helpful if you want to adjust e.g. suspected spam instructions tailored to your form content or model. The model however must output exactly two lines as the default template describes (`VERDICT: SPAM/NOT_SPAM` and `REASON: Free text reason for verdict`). |
+| `user_template`, `user_template_inline` | string | built-in default | Override how submitted fields are rendered into the prompt. Take a look at the [embedded default](../internal/spamfilter/ai/defaults/user.tmpl). |
+| `include_fields` | []string | `[]` (no fields) | Allowlist restricting which submitted fields are sent to the classifier at all, before templating, so a custom `user_template` can't accidentally leak an excluded field back in. **Privacy-safe by default: empty/unset sends zero fields**, not every field. The AI classifier effectively does nothing useful until you explicitly list which fields it should see. Use it to send only the free-text fields that actually matter for judging spam (`message`, `subject`, ...) while keeping PII (`email`, `phone`, ...) out of the third-party AI call entirely. |
 | `on_spam` | `deliver` \| `deliver_tagged` \| `drop` \| `route` | `deliver` | Action when the classifier says `SPAM`. |
-| `on_error` | `deliver` \| `deliver_tagged` \| `drop` \| `route` | `deliver` | Action when the classifier call itself fails — configured **independently** of `on_spam`, since a provider outage is "unknown," not "confirmed spam." |
+| `on_error` | `deliver` \| `deliver_tagged` \| `drop` \| `route` | `deliver` | Action when the classifier call itself fails. This is configured **independently** of `on_spam`, since a provider outage is "unknown" not "confirmed spam." |
 | `route.spam_channels`, `route.error_channels` | []string | `[]` | Channel `id`s (from this form's own `channels`) to notify instead of the normal set, used when the respective action is `route`. Empty means audit-log only. |
-| `route.spam_template`, `route.error_template` | string | — | A template shared by every channel in `route.spam_channels`/`error_channels` (see [Delivery templates](#delivery-templates)); `error_template` falls back to `spam_template` if unset. **Required** when the respective action (`on_spam`/`on_error`) is `route` — config validation rejects a form at load/reload time if the needed template is missing. |
-| `rate_limit` | object | unset (no limiting) | Throttles calls to the classifier — see below. |
+| `route.spam_template`, `route.error_template` | string | — | A template shared by *every* channel in `route.spam_channels`/`route.error_channels` (see [Delivery templates](#delivery-templates)); `error_template` falls back to `spam_template` if unset. **Required** when the respective action (`on_spam`/`on_error`) is `route`. |
+| `rate_limit` | object | unset (no limiting) | Throttles calls to the classifier to protect provider budget. See below. |
 
-`deliver`/`deliver_tagged` continue to the form's normal `channels`; `deliver_tagged` additionally sets `.Meta.SpamSuspected` (and `.Meta.SpamReason`) so a template can flag it. `drop` skips delivery entirely (still audit-logged).
+> The `on_spam`/`on_error` settings `deliver`/`deliver_tagged` continue to the form's normal `channels`. `deliver_tagged` additionally sets `.Meta.SpamSuspected` (and `.Meta.SpamReason`) so a template can flag it. `drop` skips delivery entirely (still audit-logged).
 
 #### `spam_filter.rate_limit` (optional)
 
-Throttles calls to the AI classifier itself — the same block, and the same two mutually exclusive shapes (inline numbers, or `shared_key` referencing a [`rate_limit.outbound_buckets`](#outbound_buckets) entry), as a channel's outbound [`rate_limit`](#rate_limit-optional) (see that section for the full field reference), reused here because a classifier call is exactly the same kind of rate-limited/cost-bearing third-party call a delivery channel makes:
+Throttles calls to the AI classifier itself. It uses the same block, and the same two mutually exclusive shapes (inline, or `shared_key` referencing a [`rate_limit.outbound_buckets`](#outbound_buckets) entry), as a channel's outbound [`rate_limit`](#rate_limit-optional).
 
 ```yaml
 spam_filter:
@@ -238,28 +253,37 @@ spam_filter:
     on_limit: fail
 ```
 
-**An exceeded limit (or a timed-out `on_limit: wait`) is resolved exactly like any other classifier failure — through the form's own `spam_filter.on_error`, not a separate action.** An operator who already decided what "the classifier is unavailable" means for their form (`deliver`, `drop`, `route`, ...) doesn't have to decide it a second time for "the classifier is unavailable because we throttled it ourselves." When this happens, the real `Classify` call to the AI provider is never made.
+**An exceeded limit (or a timed-out `on_limit: wait`) is resolved exactly like any other classifier failure through the form's own `spam_filter.on_error`**.
 
-`on_limit: wait` blocks the submission (up to `max_wait`) waiting for capacity, same tradeoff as a channel's outbound wait — formelay has no queue, so this is the only way to avoid resolving via `on_error` under a legitimate burst; `on_limit: fail` resolves via `on_error` immediately instead. Either way it's observed in `formelay_ratelimit_outbound_wait_seconds{target="spam_filter"}` (wait time, `on_limit: wait` only) and `formelay_spam_filter_actions_total{trigger="error"}` (the resolved action). Use `shared_key` if the spam filter should share one bucket with a channel (or another form's spam filter) genuinely billed against the same provider account/quota — see [`rate_limit.outbound_buckets`](#outbound_buckets) for how the shared bucket is defined and why it can't be combined with inline numbers.
+It's observed in `formelay_ratelimit_outbound_wait_seconds{target="spam_filter"}` (wait time, `on_limit: wait` only) and `formelay_spam_filter_actions_total{trigger="error"}` (the resolved action).
 
 ### `rate_limit` (optional override)
 
-`{per_ip: <rate rule>, per_form: <rate rule>}` — either or both override the global `rate_limit.default` for this form only. The global bucket is never overridden per-form.
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `per_ip`, `per_form` | rate rule | — | See [Rate rules](#rate-rules). Override the [global defaults](#rate_limit) |
 
 ### `fields`
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `required` | []string | `[]` | Field names that must be present and non-empty after sanitization. Any submitted field *not* listed here is optional: accepted if present, silently ignored if omitted — there's no separate "declare an optional field" setting, absence from `required` is what makes a field optional. |
-| `validators` | map[string]string | `{}` | Field name → validator name. Built-in validators: `email` (`net/mail.ParseAddress`), `url` (must have a scheme and host), `notblank`; or a custom pattern via `regex:<pattern>` (see below). Applies to optional fields too, but only fires on submissions where the field is actually present. An unrecognized validator name (a typo, or neither a built-in nor `regex:...`) is a config-load error, not a silent no-op. |
+| `required` | []string | `[]` | Field names that must be present and non-empty after sanitization. Any submitted field *not* listed here is optional: accepted if present, silently ignored if omitted (i.e. there's no separate "declare an optional field" setting, absence from `required` is what makes a field optional) |
+| `validators` | map[string]string | `{}` | Field name → validator name. Built-in validators: `email` (`net/mail.ParseAddress`), `url` (must have a scheme and host), `notblank`; or a custom pattern via `regex:<pattern>` (see below). Applies to optional fields too, but only fires on submissions where the field is actually present. |
 | `max_field_length` | int | `5000` | Rune cap per field, applied after sanitization. |
 
-**Custom validators**: `regex:<pattern>` matches the field value against a Go (RE2) regular expression — no automatic `^...$` anchoring, the pattern controls that itself, so `regex:hello` matches anywhere `hello` appears in the value, same as plain Go `regexp.MatchString`. The pattern is checked for valid syntax at config load (a broken regex fails the reload, not a live request) and compiled once, cached by pattern text, not recompiled per submission. Prefer single-quoted YAML for the pattern to avoid backslash-escaping fights with YAML's double-quoted-string escaping:
-```yaml
-fields:
-  validators:
-    zip: 'regex:^\d{5}$'
-```
+#### Custom field validators
+
+- `regex:<pattern>`: matches the field value against a Go (RE2) regular
+  expression. No automatic `^...$` anchoring, the pattern controls that itself
+  (same as plain Go `regexp.MatchString`). Prefer single-quoted YAML for the
+  pattern to avoid backslash-escaping fights with YAML's double-quoted-string
+  escaping:
+
+  ```yaml
+  fields:
+    validators:
+      zip: 'regex:^\d{5}$'
+  ```
 
 ### `channels`
 
@@ -267,45 +291,33 @@ A list of delivery targets:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string | Unique within the form; used in metrics, audit logs, and `spam_filter.route.*_channels` references. |
+| `id` | string | Unique within the form. Used in metrics, audit logs, and `spam_filter.route.*_channels` references. |
 | `type` | `email` \| `discord` \| `webhook` | See below. |
 | `enabled` | bool | Default `true`. A disabled channel's config (including any `*_env` secret it needs) is never validated or required. |
-| `rate_limit` | object | Optional. Throttles *outbound* deliveries on this channel — see below. |
-| `config` | map | Type-specific — see below. |
+| `rate_limit` | object | Optional. Throttles *outbound* deliveries on this channel (see below). |
+| `config` | map | Type-specific (see below). |
 
 #### `rate_limit` (optional)
 
-Independent of the form-level `rate_limit` above (which throttles *incoming* submissions) — this throttles how often formelay actually sends *out* on this one channel, so a burst of legitimate submissions can't blow through a mail provider's or webhook's sending quota. Unset: no outbound limiting, unchanged from before this existed.
+Independent of the form-level `rate_limit` above (which throttles *incoming*
+submissions). This throttles how often formelay actually sends *out* on the
+channel, so a burst of legitimate submissions can't blow through a mail
+provider's or webhook's sending quota. Unset means no outbound limiting.
 
-Two mutually exclusive shapes — see [`rate_limit.outbound_buckets`](#outbound_buckets) for why they can't be combined:
+It can be either `shared_key` (see
+[`rate_limit.outbound_buckets`](#outbound_buckets)) or an inline definition of
+the same object.
 
-```yaml
-# this channel gets its own private bucket:
-rate_limit:
-  rate: 10          # required: tokens per window
-  window: 1m         # required
-  burst: 10           # required: max burst size
-  on_limit: wait          # "wait" (default) | "fail"
-  max_wait: 5s              # only used when on_limit is "wait" (its default
-                              #   too, if unset); how long to block for a
-                              #   token before giving up as a failed delivery
-```
-
-```yaml
-# or: draw from a bucket shared with other channels/the spam filter,
-# defined once under the global rate_limit.outbound_buckets:
-rate_limit:
-  shared_key: "primary-smtp"
-```
-
-`rate`/`window`/`burst` use the same token-bucket semantics as the [rate rules](#rate-rules) above. `on_limit: wait` blocks (up to `max_wait`) for capacity before sending — formelay has no queue, so this is the only way to avoid dropping a delivery outright under a legitimate burst; `on_limit: fail` fails the delivery immediately instead, with zero added latency. Either way, an exceeded limit shows up as `status="rate_limited"` in `formelay_deliveries_total` and the audit log, distinct from an actual send failure. This uses the same backend as `rate_limit.backend` above (`memory` or `valkey`) — with `valkey`, an outbound limit is automatically shared across replicas too, which matters once there's more than one formelay instance hitting the same provider quota.
+An exceeded limit shows up as `status="rate_limited"` in
+`formelay_deliveries_total` and the audit log, distinct from an actual send
+failure.
 
 #### `type: email`
 
 ```yaml
 config:
   to: ["owner@example.com"]
-  host: ...            # optional; inherits smtp_defaults
+  host: ...                           # optional; inherits smtp_defaults
   port: ...
   username: ...
   password_env: ...
@@ -315,12 +327,12 @@ config:
   subject_template: "subject.tmpl"    # or subject_template_inline
   body_template: "body.tmpl"          # or body_template_inline
   body_type: html                     # html | text
-  reply_to_field: email                # optional: submitted field to use as Reply-To,
-                                        #   validated with net/mail.ParseAddress (rejected, not
-                                        #   just stripped, if it doesn't parse as one address)
+  reply_to_field: email               # optional: submitted field to use as Reply-To,
+                                      #  validated with net/mail.ParseAddress
+                                      #  rejected if it doesn't parse as one address
 ```
 
-Any field left unset falls back to `smtp_defaults`.
+Any field also defined in `smtp_default` left unset falls back to `smtp_defaults`.
 
 #### `type: discord`
 
@@ -329,38 +341,39 @@ config:
   webhook_url_env: "FORM_X_DISCORD_WEBHOOK"
   timeout: 5s
   template: "discord.tmpl"           # or template_inline — must render a complete
-                                       # Discord webhook JSON payload
+                                     #   Discord webhook JSON payload
 ```
 
 #### `type: webhook`
 
 ```yaml
 config:
-  url: "https://hooks.example.com/..."   # must be https
+  url: "https://hooks.example.com/..."    # must be https
   method: POST
   headers: {}
   auth:
-    type: none        # none | basic | bearer
-    username: ...      # basic
-    password_env: ...  # basic
-    token_env: ...      # bearer
+    type: none                            # none | basic | bearer
+    username: ...                         # basic
+    password_env: ...                     # basic
+    token_env: ...                        # bearer
   timeout: 5s
-  template: "webhook.tmpl"           # or template_inline
+  template: "webhook.tmpl"                # or template_inline
 ```
 
-Use this for any incoming-webhook-based service (Slack, Telegram, PagerDuty, a custom endpoint) without writing Go code.
+Use this for any incoming-webhook-based service (Slack, Telegram, PagerDuty, a
+custom endpoint).
 
 ## Delivery templates
 
-Referenced by `*_template` (a path, resolved relative to `templates_dir`) or `*_template_inline` (a literal string in the YAML). Parsed once at reload — a broken template fails the reload, not a live request.
+Referenced by `*_template` (a path, resolved relative to `templates_dir`) or
+`*_template_inline` (a literal string in the YAML). Parsed once at reload.
 
-- **Email body**: `html/template`, auto-escaped — safe by default even though field values are attacker-controlled.
-- **Email subject, Discord, webhook, AI spam-filter prompts**: `text/template`, with a `json` template function you must use explicitly for any field interpolated into a JSON payload (e.g. `{{ .Fields.name | json }}`) — `text/template` has no automatic escaping.
-- **`default <fallback> <value>`**: returns `<fallback>` if `<value>` is empty.
+- **Email body**: `html/template`, auto-escaped. Safe by default even though field values are user-controlled.
+- **Email subject, Discord, webhook, AI spam-filter prompts**: `text/template`, with a `json` template function you must use explicitly for any field interpolated into a JSON payload (e.g. `{{ .Fields.name | json }}`).
 - Every template receives:
   - `.Form.ID`, `.Form.DisplayName`
   - `.Fields.<name>` (first value), `.FieldsMulti.<name>` ([]string, for repeated fields like checkboxes)
   - `.Meta.RequestID`, `.Meta.Timestamp`, `.Meta.SourceIP`, `.Meta.Origin`
-  - `.Meta.SpamSuspected`, `.Meta.SpamReason`, `.Meta.SpamFilterErr` — populated only after the spam-filter stage runs and only for `deliver_tagged`/`route` outcomes
+  - `.Meta.SpamSuspected`, `.Meta.SpamReason`, `.Meta.SpamFilterErr` (Populated only after the spam-filter stage runs and only for `deliver_tagged`/`route` outcomes)
 
 See [examples.md](examples.md) for complete, working templates.
