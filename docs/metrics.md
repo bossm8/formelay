@@ -47,3 +47,7 @@ Every metric below is on a dedicated registry (`internal/metrics`), populated at
 | `formelay_build_info` | gauge | `version`, `commit`, `go_version` | Always `1`; join against other series to break them down by build. |
 
 `internal/metrics` also registers the standard Go and process collectors from `prometheus/client_golang/prometheus/collectors` (`go_*`, `process_*`: goroutine count, GC stats, memory, open file descriptors, and so on) — the usual Prometheus Go-runtime metrics, not enumerated individually here.
+
+## Grafana dashboard
+
+[`assets/grafana-dashboard.json`](../assets/grafana-dashboard.json) is an importable Grafana dashboard covering every metric on this page.

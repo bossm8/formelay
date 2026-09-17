@@ -53,6 +53,7 @@ func (s *Server) dispatchShared(ctx context.Context, requestID, formID string, c
 	}
 	body, err := tmpl.Execute(data)
 	if err != nil {
+		slog.Warn("spam-review template render failed, not sending", "request_id", requestID, "form_id", formID, "channels", channelIDs, "error", err.Error())
 		results := make([]audit.ChannelResult, 0, len(channelIDs))
 		for _, id := range channelIDs {
 			results = append(results, audit.ChannelResult{ID: id, Success: false, Error: "render: " + err.Error()})
@@ -121,7 +122,7 @@ func buildMessage(cc *app.CompiledChannel, data render.SubmissionData) notify.Re
 
 func (s *Server) sendOne(ctx context.Context, requestID, formID, channelID string, cc *app.CompiledChannel, msg notify.RenderedMessage) audit.ChannelResult {
 	if errMsg, ok := msg.Meta["render_error"]; ok {
-		slog.Debug("channel template render failed, not sending", "request_id", requestID, "form_id", formID, "channel", channelID, "error", errMsg)
+		slog.Warn("channel template render failed, not sending", "request_id", requestID, "form_id", formID, "channel", channelID, "error", errMsg)
 		s.Metrics.DeliveriesTotal.WithLabelValues(formID, channelID, cc.Notifier.Type(), "failure").Inc()
 		return audit.ChannelResult{ID: channelID, Type: cc.Notifier.Type(), Success: false, Error: "render: " + errMsg}
 	}
