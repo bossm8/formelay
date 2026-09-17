@@ -4,8 +4,10 @@ formelay reads two kinds of YAML: one global `config.yaml`, and one file per
 form under `forms_dir` (`forms/*.yaml` by default). Both are strictly decoded
 and hot-reloaded (fsnotify watching the directories, `SIGHUP` or a HTTP `POST`
 to the internal reload endpoint). A new config is fully validated before
-replacing a current one, including parsing every template it references. An
-invalid change is rejected and logged while the previous config keeps serving.
+replacing a current one, including parsing every template it references (see
+[Delivery templates](#delivery-templates) for what parsing a template does and
+does not catch). An invalid change is rejected and logged while the previous
+config keeps serving.
 
 Working examples of the settings below are documented in [examples.md](examples.md).
 
@@ -375,5 +377,15 @@ Referenced by `*_template` (a path, resolved relative to `templates_dir`) or
   - `.Fields.<name>` (first value), `.FieldsMulti.<name>` ([]string, for repeated fields like checkboxes)
   - `.Meta.RequestID`, `.Meta.Timestamp`, `.Meta.SourceIP`, `.Meta.Origin`
   - `.Meta.SpamSuspected`, `.Meta.SpamReason`, `.Meta.SpamFilterErr` (Populated only after the spam-filter stage runs and only for `deliver_tagged`/`route` outcomes)
+
+**What a reload catches**: Parsing covers template syntax, unknown function
+names, and reading the file named by `*_template`. Any of those fails the
+reload. It does **not cover** the data a template reads. So
+`{{ .Form.phone }}`, where `{{ .Fields.phone }}` was meant, loads without
+complaint and then fails on every submission: nothing is sent on that channel,
+it is logged at warn level, it counts as failure, and the audit record carries the
+template error under `channels[].error`.
+
+> **Always** test a new or edited template with a real submission.
 
 See [examples.md](examples.md) for complete, working templates.
