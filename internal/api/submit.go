@@ -122,8 +122,9 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		finish("validation_failed", "invalid_field_encoding", http.StatusBadRequest)
 		return
 	}
-	if failed := validateFields(fields, fc.Fields); len(failed) > 0 {
-		slog.Debug("field validation failed", "request_id", requestID, "form_id", formID, "fields", failed)
+	loudFailed, silentFailed := validateFields(fields, fc.Fields)
+	if len(loudFailed) > 0 {
+		slog.Debug("field validation failed", "request_id", requestID, "form_id", formID, "fields", loudFailed)
 		finish("validation_failed", "validation_failed", http.StatusBadRequest)
 		return
 	}
@@ -133,6 +134,20 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		s.Metrics.HoneypotTriggeredTotal.WithLabelValues(formID).Inc()
 		s.Metrics.SubmissionsTotal.WithLabelValues(formID, "spam_dropped_honeypot").Inc()
 		s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: "spam_dropped_honeypot", Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
+		respondSuccess(w, requestID)
+		return
+	}
+
+	// 6b. silent field validators (e.g. not:regex:... marked silent:) —
+	// resolved exactly like the honeypot: a fake success response, so a
+	// sender can't tell it was filtered.
+	if len(silentFailed) > 0 {
+		for _, name := range silentFailed {
+			s.Metrics.SilentValidatorTriggeredTotal.WithLabelValues(formID, name).Inc()
+		}
+		status := "spam_dropped_field_filter"
+		s.Metrics.SubmissionsTotal.WithLabelValues(formID, status).Inc()
+		s.Audit.Log(audit.Event{RequestID: requestID, FormID: formID, SourceIP: ip, Origin: origin, Status: status, Latency: time.Since(start), FieldValues: fields}, global.Logging.Audit.Enabled, global.Logging.Audit.LogFieldValues)
 		respondSuccess(w, requestID)
 		return
 	}

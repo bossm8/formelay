@@ -11,23 +11,24 @@ import (
 type Metrics struct {
 	Registry *prometheus.Registry
 
-	SubmissionsTotal             *prometheus.CounterVec
-	DeliveriesTotal              *prometheus.CounterVec
-	DeliveryLatencySeconds       *prometheus.HistogramVec
-	RateLimitedTotal             *prometheus.CounterVec
-	HoneypotTriggeredTotal       *prometheus.CounterVec
-	CaptchaVerificationsTotal    *prometheus.CounterVec
-	SpamFilterVerdictsTotal      *prometheus.CounterVec
-	SpamFilterActionsTotal       *prometheus.CounterVec
-	SpamFilterLatencySeconds     *prometheus.HistogramVec
-	ConfigReloadTotal            *prometheus.CounterVec
-	ConfigLastReloadTimestamp    prometheus.Gauge
-	RatelimitBucketsActive       *prometheus.GaugeVec
-	RatelimitBackendErrorsTotal  *prometheus.CounterVec
-	RatelimitOutboundWaitSeconds *prometheus.HistogramVec
-	HTTPRequestsInFlight         prometheus.Gauge
-	BackgroundDispatchesInFlight prometheus.Gauge
-	BuildInfo                    *prometheus.GaugeVec
+	SubmissionsTotal              *prometheus.CounterVec
+	DeliveriesTotal               *prometheus.CounterVec
+	DeliveryLatencySeconds        *prometheus.HistogramVec
+	RateLimitedTotal              *prometheus.CounterVec
+	HoneypotTriggeredTotal        *prometheus.CounterVec
+	SilentValidatorTriggeredTotal *prometheus.CounterVec
+	CaptchaVerificationsTotal     *prometheus.CounterVec
+	SpamFilterVerdictsTotal       *prometheus.CounterVec
+	SpamFilterActionsTotal        *prometheus.CounterVec
+	SpamFilterLatencySeconds      *prometheus.HistogramVec
+	ConfigReloadTotal             *prometheus.CounterVec
+	ConfigLastReloadTimestamp     prometheus.Gauge
+	RatelimitBucketsActive        *prometheus.GaugeVec
+	RatelimitBackendErrorsTotal   *prometheus.CounterVec
+	RatelimitOutboundWaitSeconds  *prometheus.HistogramVec
+	HTTPRequestsInFlight          prometheus.Gauge
+	BackgroundDispatchesInFlight  prometheus.Gauge
+	BuildInfo                     *prometheus.GaugeVec
 }
 
 func New(version, commit, goVersion string) *Metrics {
@@ -53,6 +54,9 @@ func New(version, commit, goVersion string) *Metrics {
 		HoneypotTriggeredTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "formelay_honeypot_triggered_total", Help: "Submissions dropped by the honeypot check.",
 		}, []string{"form"}),
+		SilentValidatorTriggeredTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "formelay_silent_validator_triggered_total", Help: "Submissions dropped by a fields.validators kind marked silent: (e.g. a not:regex: denylist).",
+		}, []string{"form", "field"}),
 		CaptchaVerificationsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "formelay_captcha_verifications_total", Help: "CAPTCHA verification attempts.",
 		}, []string{"form", "provider", "status"}),
@@ -94,7 +98,7 @@ func New(version, commit, goVersion string) *Metrics {
 
 	reg.MustRegister(
 		m.SubmissionsTotal, m.DeliveriesTotal, m.DeliveryLatencySeconds, m.RateLimitedTotal,
-		m.HoneypotTriggeredTotal, m.CaptchaVerificationsTotal, m.SpamFilterVerdictsTotal,
+		m.HoneypotTriggeredTotal, m.SilentValidatorTriggeredTotal, m.CaptchaVerificationsTotal, m.SpamFilterVerdictsTotal,
 		m.SpamFilterActionsTotal, m.SpamFilterLatencySeconds, m.ConfigReloadTotal,
 		m.ConfigLastReloadTimestamp, m.RatelimitBucketsActive, m.RatelimitBackendErrorsTotal,
 		m.RatelimitOutboundWaitSeconds, m.HTTPRequestsInFlight, m.BackgroundDispatchesInFlight, m.BuildInfo,

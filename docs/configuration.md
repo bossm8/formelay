@@ -287,6 +287,38 @@ It's observed in `formelay_ratelimit_outbound_wait_seconds{target="spam_filter"}
       zip: 'regex:^\d{5}$'
   ```
 
+#### Validator modifiers: `not:` and `silent:`
+
+Both are prefixes on a validator kind (built-in or `regex:`), stackable in
+either order, and independent of each other:
+
+- **`not:`** inverts the underlying kind's pass/fail result. Combined with
+  `regex:`, this is how to express a denylist. For example `not:regex:<pattern>`: the field fails exactly when the pattern matches. Useful for filtering out known
+  junk senders, e.g. rejecting a reply-to address at a known
+  scanner/test-tool domain (best combined with `silent` below):
+
+  ```yaml
+  fields:
+    validators:
+      reply_to: 'not:regex:@(formtests\.info|mailinator\.com)$'
+  ```
+
+- **`silent:`** changes how a failure is *reported*. Instead of an ordinary `400 validation_failed`, it's resolved
+  exactly like the honeypot with a fake success response, so a scanner can't
+  tell it was filtered. While still showing up distinctly for operators as
+  `spam_dropped_field_filter` in the audit log and
+  `formelay_submissions_total`, and incrementing
+  `formelay_silent_validator_triggered_total{field="..."}` (see
+  [metrics.md](metrics.md)). 
+  
+  Combine with `not:` for a silent denylist:
+
+  ```yaml
+  fields:
+    validators:
+      reply_to: 'silent:not:regex:@(formtests\.info|mailinator\.com)$'
+  ```
+  
 ### `channels`
 
 A list of delivery targets:
@@ -370,13 +402,19 @@ custom endpoint).
 Referenced by `*_template` (a path, resolved relative to `templates_dir`) or
 `*_template_inline` (a literal string in the YAML). Parsed once at reload.
 
-- **Email body**: `html/template`, auto-escaped. Safe by default even though field values are user-controlled.
-- **Email subject, Discord, webhook, AI spam-filter prompts**: `text/template`, with a `json` template function you must use explicitly for any field interpolated into a JSON payload (e.g. `{{ .Fields.name | json }}`).
+- **Email body**: `html/template`, auto-escaped. Safe by default even though
+  field values are user-controlled.
+- **Email subject, Discord, webhook, AI spam-filter prompts**: `text/template`,
+  with a `json` template function you must use explicitly for any field
+  interpolated into a JSON payload (e.g. `{{ .Fields.name | json }}`).
 - Every template receives:
   - `.Form.ID`, `.Form.DisplayName`
-  - `.Fields.<name>` (first value), `.FieldsMulti.<name>` ([]string, for repeated fields like checkboxes)
+  - `.Fields.<name>` (first value), `.FieldsMulti.<name>` ([]string, for
+    repeated fields like checkboxes)
   - `.Meta.RequestID`, `.Meta.Timestamp`, `.Meta.SourceIP`, `.Meta.Origin`
-  - `.Meta.SpamSuspected`, `.Meta.SpamReason`, `.Meta.SpamFilterErr` (Populated only after the spam-filter stage runs and only for `deliver_tagged`/`route` outcomes)
+  - `.Meta.SpamSuspected`, `.Meta.SpamReason`, `.Meta.SpamFilterErr` (Populated
+    only after the spam-filter stage runs and only for `deliver_tagged`/`route`
+    outcomes)
 
 **What a reload catches**: Parsing covers template syntax, unknown function
 names, and reading the file named by `*_template`. Any of those fails the

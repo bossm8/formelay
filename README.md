@@ -121,6 +121,10 @@ curl -i -X POST http://localhost:8080/f/contact/submit \
 
 > [!NOTE] formelay only supports `POST` on the form endpoint, no `GET`, so make sure your HTML form sets `method=POST`.
 
+Submissions may be `application/x-www-form-urlencoded`, `multipart/form-data` or
+`application/json`. The full wire contract (what each accepts, the response
+envelope and every error code) is in **[docs/api.md](docs/api.md)**.
+
 With the placeholder credentials from `.env.example`, this exercises the full
 pipeline (auth, rate limiting, honeypot, sanitization, template rendering) and
 responds `502 delivery_failed`, since the placeholder SMTP/Discord destinations
@@ -174,8 +178,9 @@ with its exact labels and values in
 - **Input Sanitization.** Submitted field values are stripped of markup,
   normalized, and safely escaped before reaching delivery templates. They're never
   interpreted as markup, template source, or raw HTTP headers.
-- **Text Only.** File uploads are rejected outright. This is a text-field relay,
-  not a file-upload service.
+- **Text Only.** File uploads are rejected outright: a multipart body carrying
+  any file part is refused in full, text fields included. This is a text-field
+  relay, not a file-upload service.
 
 ## Development
 

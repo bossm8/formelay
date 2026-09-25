@@ -725,18 +725,75 @@ rate_limit:
 	formSpam := url.Values{"name": {"Alice"}, "email": {"alice@example.com"}}
 	recSpam := doSubmit(t, sSpam, "contact", formSpam, map[string]string{"X-Formelay-Site-Key": "the-key"})
 
-	if recHP.Code != http.StatusOK || recSpam.Code != http.StatusOK {
-		t.Fatalf("expected both paths to respond 200, got honeypot=%d spam=%d", recHP.Code, recSpam.Code)
+	const filterForm = `
+id: contact
+allowed_origins: ["https://example.com"]
+auth:
+  site_key: "the-key"
+fields:
+  required: ["name", "email"]
+  validators:
+    email: "email"
+    reply_to: "silent:not:regex:@formtests\\.info$"
+channels:
+  - id: wh
+    type: webhook
+    config:
+      url: "https://example.invalid/hook"
+      template: "body.tmpl"
+`
+	filterCap := &auditCapture{}
+	sFilter, _ := newTestServer(t, filterForm)
+	sFilter.Audit = audit.New(newAuditLogger(filterCap))
+	formFilter := url.Values{"name": {"Alice"}, "email": {"alice@example.com"}, "reply_to": {"bot@formtests.info"}}
+	recFilter := doSubmit(t, sFilter, "contact", formFilter, map[string]string{"X-Formelay-Site-Key": "the-key"})
+
+	if recHP.Code != http.StatusOK || recSpam.Code != http.StatusOK || recFilter.Code != http.StatusOK {
+		t.Fatalf("expected all three paths to respond 200, got honeypot=%d spam=%d filter=%d", recHP.Code, recSpam.Code, recFilter.Code)
 	}
-	if recHP.Body.String() != recSpam.Body.String() {
-		t.Fatalf("responses must be indistinguishable: honeypot body=%s, spam body=%s", recHP.Body.String(), recSpam.Body.String())
+	if recHP.Body.String() != recSpam.Body.String() || recHP.Body.String() != recFilter.Body.String() {
+		t.Fatalf("responses must be indistinguishable: honeypot body=%s, spam body=%s, filter body=%s", recHP.Body.String(), recSpam.Body.String(), recFilter.Body.String())
 	}
 
-	hpStatus, spamStatus := hpCap.lastStatus(t), spamCap.lastStatus(t)
+	hpStatus, spamStatus, filterStatus := hpCap.lastStatus(t), spamCap.lastStatus(t), filterCap.lastStatus(t)
 	if hpStatus != "spam_dropped_honeypot" {
 		t.Fatalf("honeypot audit status = %q, want spam_dropped_honeypot", hpStatus)
 	}
 	if spamStatus != "spam_dropped_ai" {
 		t.Fatalf("spam-filter audit status = %q, want spam_dropped_ai", spamStatus)
+	}
+	if filterStatus != "spam_dropped_field_filter" {
+		t.Fatalf("silent validator audit status = %q, want spam_dropped_field_filter", filterStatus)
+	}
+}
+
+// TestSubmit_NotWithoutSilentIsAnOrdinaryValidationFailure proves that
+// silent: — not not: — is what controls whether a validator failure is
+// resolved like the honeypot: the exact same denylist pattern without
+// the silent: modifier must still be a normal, visible 400
+// validation_failed, not a fake success.
+func TestSubmit_NotWithoutSilentIsAnOrdinaryValidationFailure(t *testing.T) {
+	const loudFilterForm = `
+id: contact
+allowed_origins: ["https://example.com"]
+auth:
+  site_key: "the-key"
+fields:
+  required: ["name", "email"]
+  validators:
+    email: "email"
+    reply_to: "not:regex:@formtests\\.info$"
+channels:
+  - id: wh
+    type: webhook
+    config:
+      url: "https://example.invalid/hook"
+      template: "body.tmpl"
+`
+	s, _ := newTestServer(t, loudFilterForm)
+	form := url.Values{"name": {"Alice"}, "email": {"alice@example.com"}, "reply_to": {"bot@formtests.info"}}
+	rec := doSubmit(t, s, "contact", form, map[string]string{"X-Formelay-Site-Key": "the-key"})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 validation_failed, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

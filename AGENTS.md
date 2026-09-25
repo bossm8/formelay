@@ -97,6 +97,26 @@ planned, or aspirational. If you change behavior, update the docs in the
 same change; if you're unsure whether docs match code, check before
 trusting either.
 
+## Test wanted behavior, not known gaps
+
+A test must assert what the code is *supposed* to do, not encode a
+known gap or limitation as passing just because that's what happens
+today. If you find real behavior diverging from intended behavior while
+writing or reviewing tests, don't write a test that locks the gap in as
+"correct" — that just enshrines the bug and makes it look tested. Instead:
+
+- Note the gap in [TODO.md](TODO.md) (its existing format —
+  **Today**/**Why it matters**/**Fix**), including that a test is owed
+  once it's actually fixed, not before.
+- Say so directly rather than quietly working around it.
+
+This does not apply to a *deliberate* design tradeoff someone
+consciously chose (e.g. `TestSubmit_RateLimiterBackendErrorFailsOpen` in
+`internal/api/submit_test.go` — availability over strictness, named and
+reasoned about, not an accident) — those are fine to pin as passing,
+because they're not wrong, just a decision. The distinction is intent:
+was this chosen, or did it just happen?
+
 ## Don't add dependencies unilaterally
 
 Do not add a new Go module to `go.mod`, a new GitHub Action, or a new

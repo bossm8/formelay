@@ -9,7 +9,7 @@ func TestWithFieldsLimitedTo(t *testing.T) {
 	full := SubmissionData{
 		Form:        FormMeta{ID: "contact", DisplayName: "Contact"},
 		Fields:      map[string]string{"name": "Alice", "email": "alice@example.com", "message": "hi"},
-		FieldsMulti: map[string][]string{"name": {"Alice"}, "email": {"alice@example.com"}, "message": {"hi"}},
+		FieldsMulti: map[string][]string{"name": {"Alice"}, "email": {"alice@example.com"}, "message": {"hi"}, "topics": {"billing", "outage"}},
 	}
 
 	t.Run("restricts to the allowlist", func(t *testing.T) {
@@ -63,6 +63,14 @@ func TestWithFieldsLimitedTo(t *testing.T) {
 		_ = full.WithFieldsLimitedTo([]string{"message"})
 		if len(full.Fields) != 3 {
 			t.Fatalf("original Fields was mutated: %v", full.Fields)
+		}
+	})
+
+	t.Run("a multi-valued field's full slice passes through the allowlist, not just the first value", func(t *testing.T) {
+		got := full.WithFieldsLimitedTo([]string{"topics"})
+		want := []string{"billing", "outage"}
+		if !reflect.DeepEqual(got.FieldsMulti["topics"], want) {
+			t.Fatalf("FieldsMulti[topics] = %v, want %v", got.FieldsMulti["topics"], want)
 		}
 	})
 }

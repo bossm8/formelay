@@ -416,6 +416,35 @@ func TestValidateForm(t *testing.T) {
 			t.Fatal("expected error for unrecognized validator kind")
 		}
 	})
+
+	t.Run("fields.validators: not:/silent: wrapping a valid kind is accepted, individually and stacked either order", func(t *testing.T) {
+		f := base()
+		f.Fields.Validators = map[string]string{
+			"a": "not:email",
+			"b": "silent:notblank",
+			"c": `silent:not:regex:@formtests\.info$`,
+			"d": `not:silent:regex:@formtests\.info$`,
+		}
+		if err := ValidateForm(f); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("fields.validators: not: wrapping an invalid regex still fails (the base kind is actually checked, not skipped)", func(t *testing.T) {
+		f := base()
+		f.Fields.Validators = map[string]string{"zip": "not:regex:^[unterminated"}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for invalid regex syntax under not:")
+		}
+	})
+
+	t.Run("fields.validators: silent: wrapping an unknown kind still fails", func(t *testing.T) {
+		f := base()
+		f.Fields.Validators = map[string]string{"email": "silent:emial"}
+		if err := ValidateForm(f); err == nil {
+			t.Fatal("expected error for unrecognized validator kind under silent:")
+		}
+	})
 }
 
 func TestValidateGlobal(t *testing.T) {

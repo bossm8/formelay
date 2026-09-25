@@ -44,23 +44,51 @@ func TestValidateFields(t *testing.T) {
 	}
 
 	t.Run("all required fields present and valid", func(t *testing.T) {
-		failed := validateFields(map[string]string{"name": "Alice", "email": "alice@example.com"}, cfg)
-		if len(failed) != 0 {
-			t.Fatalf("expected no failures, got %v", failed)
+		loud, silent := validateFields(map[string]string{"name": "Alice", "email": "alice@example.com"}, cfg)
+		if len(loud) != 0 || len(silent) != 0 {
+			t.Fatalf("expected no failures, got loud=%v silent=%v", loud, silent)
 		}
 	})
 
 	t.Run("missing required field", func(t *testing.T) {
-		failed := validateFields(map[string]string{"name": "Alice"}, cfg)
-		if len(failed) != 1 || failed[0] != "email" {
-			t.Fatalf("expected [email] to fail as missing, got %v", failed)
+		loud, silent := validateFields(map[string]string{"name": "Alice"}, cfg)
+		if len(loud) != 1 || loud[0] != "email" {
+			t.Fatalf("expected [email] to fail as missing (loud), got loud=%v", loud)
+		}
+		if len(silent) != 0 {
+			t.Fatalf("a missing required field is never silent, got %v", silent)
 		}
 	})
 
 	t.Run("present but invalid per its validator", func(t *testing.T) {
-		failed := validateFields(map[string]string{"name": "Alice", "email": "not-an-email"}, cfg)
-		if len(failed) != 1 || failed[0] != "email" {
-			t.Fatalf("expected [email] to fail validation, got %v", failed)
+		loud, silent := validateFields(map[string]string{"name": "Alice", "email": "not-an-email"}, cfg)
+		if len(loud) != 1 || loud[0] != "email" {
+			t.Fatalf("expected [email] to fail validation (loud), got loud=%v", loud)
+		}
+		if len(silent) != 0 {
+			t.Fatalf("expected no silent failures, got %v", silent)
+		}
+	})
+
+	t.Run("a silent:-marked validator failure lands in silent, not loud", func(t *testing.T) {
+		silentCfg := config.FieldsConfig{Validators: map[string]string{"reply_to": "silent:not:regex:@formtests\\.info$"}}
+		loud, silent := validateFields(map[string]string{"reply_to": "bot@formtests.info"}, silentCfg)
+		if len(loud) != 0 {
+			t.Fatalf("expected no loud failures, got %v", loud)
+		}
+		if len(silent) != 1 || silent[0] != "reply_to" {
+			t.Fatalf("expected [reply_to] to fail silently, got %v", silent)
+		}
+	})
+
+	t.Run("the same denylist without silent: is an ordinary loud failure", func(t *testing.T) {
+		loudCfg := config.FieldsConfig{Validators: map[string]string{"reply_to": "not:regex:@formtests\\.info$"}}
+		loud, silent := validateFields(map[string]string{"reply_to": "bot@formtests.info"}, loudCfg)
+		if len(silent) != 0 {
+			t.Fatalf("expected no silent failures, got %v", silent)
+		}
+		if len(loud) != 1 || loud[0] != "reply_to" {
+			t.Fatalf("expected [reply_to] to fail loudly, got %v", loud)
 		}
 	})
 }
@@ -83,6 +111,24 @@ func TestRunValidator(t *testing.T) {
 		{`regex:^\d{5}$`, "abcde", false},
 		{"regex:hello", "say hello there", true}, // no anchors: plain substring match, as documented
 		{"regex:[", "anything", false},           // invalid pattern fails closed, doesn't panic
+
+		// not: inverts the underlying kind's result — a denylist, using
+		// the existing regex engine
+		{`not:regex:@formtests\.info$`, "bot@formtests.info", false}, // matches -> fails (blocked)
+		{`not:regex:@formtests\.info$`, "alice@example.com", true},   // doesn't match -> passes
+		{"not:notblank", "", true},                                   // notblank("") is false, negated -> true
+		{"not:notblank", "something", false},
+
+		// silent: is transparent to the check itself — same pass/fail as
+		// the unmarked kind; only how the caller *reports* a failure
+		// differs (see TestValidateFields).
+		{"silent:notblank", "", false},
+		{"silent:notblank", "something", true},
+
+		// stacked, in either order — stripping is order-independent, so
+		// both must produce the same result.
+		{`silent:not:regex:@formtests\.info$`, "bot@formtests.info", false},
+		{`not:silent:regex:@formtests\.info$`, "bot@formtests.info", false},
 	}
 	for _, c := range cases {
 		t.Run(c.kind+"/"+c.value, func(t *testing.T) {

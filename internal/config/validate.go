@@ -15,6 +15,40 @@ import (
 // prefix this package validates the syntax of at config load.
 const RegexValidatorPrefix = "regex:"
 
+// NotValidatorPrefix and SilentValidatorPrefix are stackable modifiers on
+// any fields.validators kind (in either order) — see
+// StripValidatorModifiers. not: inverts the underlying kind's pass/fail
+// result, e.g. "not:regex:@(formtests\.info)$" fails exactly when the
+// pattern matches, a denylist expressed with the existing regex engine
+// rather than a dedicated kind. silent: changes how a failure is
+// reported (resolved like the honeypot — a fake success response — not
+// a normal 400 validation_failed), independent of what the check itself
+// does.
+const (
+	NotValidatorPrefix    = "not:"
+	SilentValidatorPrefix = "silent:"
+)
+
+// StripValidatorModifiers peels not:/silent: off kind, in any order
+// (they're independent concerns), returning the base kind underneath
+// and which modifiers were present. Exported so internal/api's
+// runValidator (the actual matcher) and this package's
+// validateFieldValidatorKind (the load-time syntax check) share one
+// parser instead of two that could drift apart.
+func StripValidatorModifiers(kind string) (base string, negate, silent bool) {
+	for {
+		if rest, ok := strings.CutPrefix(kind, NotValidatorPrefix); ok {
+			negate, kind = true, rest
+			continue
+		}
+		if rest, ok := strings.CutPrefix(kind, SilentValidatorPrefix); ok {
+			silent, kind = true, rest
+			continue
+		}
+		return kind, negate, silent
+	}
+}
+
 // ValidateGlobal performs structural validation of the global config.
 func ValidateGlobal(g *GlobalConfig) error {
 	if g.Server.ListenAddr == "" {
@@ -171,17 +205,18 @@ func ValidateForm(f *FormConfig) error {
 // used to silently no-op at runtime (a typo like "emial" validated
 // nothing, with no warning); it's now a config-load error instead.
 func validateFieldValidatorKind(kind string) error {
-	switch kind {
+	base, _, _ := StripValidatorModifiers(kind)
+	switch base {
 	case "email", "url", "notblank":
 		return nil
 	}
-	if pattern, ok := strings.CutPrefix(kind, RegexValidatorPrefix); ok {
+	if pattern, ok := strings.CutPrefix(base, RegexValidatorPrefix); ok {
 		if _, err := regexp.Compile(pattern); err != nil {
 			return fmt.Errorf("invalid regex: %w", err)
 		}
 		return nil
 	}
-	return fmt.Errorf("unknown validator %q (must be 'email', 'url', 'notblank', or '%s<pattern>')", kind, RegexValidatorPrefix)
+	return fmt.Errorf("unknown validator %q (must be 'email', 'url', 'notblank', or '%s<pattern>', optionally prefixed with '%s' and/or '%s')", kind, RegexValidatorPrefix, NotValidatorPrefix, SilentValidatorPrefix)
 }
 
 // validateOutboundRateLimit checks rl (a channel's or spam_filter's
