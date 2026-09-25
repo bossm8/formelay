@@ -132,6 +132,56 @@ func TestDecodeSubmission(t *testing.T) {
 			t.Fatal("expected error for malformed JSON")
 		}
 	})
+
+	t.Run("repeated urlencoded field names are all preserved, in order", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("topics=billing&topics=outage"))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		got, err := decodeSubmission(httptest.NewRecorder(), r, 1<<20)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []string{"billing", "outage"}
+		if len(got["topics"]) != 2 || got["topics"][0] != want[0] || got["topics"][1] != want[1] {
+			t.Fatalf("topics = %v, want %v", got["topics"], want)
+		}
+	})
+
+	t.Run("repeated multipart field names are all preserved, in order", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := multipart.NewWriter(&buf)
+		if err := w.WriteField("topics", "billing"); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.WriteField("topics", "outage"); err != nil {
+			t.Fatal(err)
+		}
+		w.Close()
+		r := httptest.NewRequest(http.MethodPost, "/", &buf)
+		r.Header.Set("Content-Type", w.FormDataContentType())
+		got, err := decodeSubmission(httptest.NewRecorder(), r, 1<<20)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []string{"billing", "outage"}
+		if len(got["topics"]) != 2 || got["topics"][0] != want[0] || got["topics"][1] != want[1] {
+			t.Fatalf("topics = %v, want %v", got["topics"], want)
+		}
+	})
+
+	t.Run("a JSON array value is rejected outright (flat string fields only, by design)", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"topics":["billing","outage"]}`))
+		r.Header.Set("Content-Type", "application/json")
+		if _, err := decodeSubmission(httptest.NewRecorder(), r, 1<<20); err == nil {
+			t.Fatal("expected error for an array-valued JSON field, per docs/api.md")
+		}
+	})
+
+	// JSON duplicate keys silently collapsing to the last value (no error, no
+	// warning — encoding/json's own behavior) is a known, unfixed limitation,
+	// not correct behavior — see TODO.md "JSON cannot express multi-valued
+	// fields". Per AGENTS.md "Test wanted behavior, not known gaps", it isn't
+	// pinned here as a passing test; a regression test is owed once it's
+	// actually fixed, not before.
 }
 
 func TestFlatten(t *testing.T) {

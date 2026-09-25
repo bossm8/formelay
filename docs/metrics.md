@@ -8,7 +8,7 @@ Every metric below is on a dedicated registry (`internal/metrics`), populated at
 
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
-| `formelay_submissions_total` | counter | `form`, `status` | One increment per submission attempt. `status` is one of `success`, `validation_failed`, `origin_denied`, `auth_denied`, `rate_limited`, `spam_dropped_honeypot`, `captcha_failed`, `spam_dropped_ai`, `delivery_failed` — the same vocabulary as the audit log's `status` field. For a `response_mode: async` form (see [configuration.md](configuration.md#top-level)), this is recorded once the background spam-filter/dispatch work actually finishes, not when the (already-sent) HTTP response went out — so `success` here still means genuinely delivered, even though the client found out sooner. |
+| `formelay_submissions_total` | counter | `form`, `status` | One increment per submission attempt. `status` is one of `success`, `validation_failed`, `origin_denied`, `auth_denied`, `rate_limited`, `spam_dropped_honeypot`, `spam_dropped_field_filter`, `captcha_failed`, `spam_dropped_ai`, `delivery_failed` — the same vocabulary as the audit log's `status` field. For a `response_mode: async` form (see [configuration.md](configuration.md#top-level)), this is recorded once the background spam-filter/dispatch work actually finishes, not when the (already-sent) HTTP response went out — so `success` here still means genuinely delivered, even though the client found out sooner. |
 | `formelay_deliveries_total` | counter | `form`, `channel`, `channel_type`, `status` | One increment per channel delivery attempt. `channel` is the form's own `channels[].id`; `channel_type` is `email`\|`discord`\|`webhook`; `status` is `success`\|`failure`\|`rate_limited` (this channel's own `rate_limit` — see [configuration.md](configuration.md#rate_limit-optional) — rejected or timed out waiting for capacity; distinct from an actual send failure). |
 | `formelay_delivery_latency_seconds` | histogram | `form`, `channel_type` | Time spent in one channel's `Notifier.Send`, including template rendering. |
 
@@ -26,6 +26,7 @@ Every metric below is on a dedicated registry (`internal/metrics`), populated at
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
 | `formelay_honeypot_triggered_total` | counter | `form` | One increment per submission dropped by the honeypot field check. |
+| `formelay_silent_validator_triggered_total` | counter | `form`, `field` | One increment per submission dropped by a `fields.validators` kind marked `silent:` (see [configuration.md](configuration.md#validator-modifiers-not-and-silent)). |
 | `formelay_captcha_verifications_total` | counter | `form`, `provider`, `status` | One increment per CAPTCHA verify call. `provider` is the form's `captcha.provider` (`turnstile`\|`hcaptcha`\|`recaptcha_v2`\|`recaptcha_v3`\|`generic`); `status` is `success`\|`failed`\|`error` (the verify call itself erroring, resolved by `captcha.on_error`). |
 | `formelay_spam_filter_verdicts_total` | counter | `form`, `verdict` | One increment per AI classifier call. `verdict` is `not_spam`\|`spam`\|`error`. |
 | `formelay_spam_filter_actions_total` | counter | `form`, `trigger`, `action` | One increment per resolved `on_spam`/`on_error` outcome. `trigger` is `spam`\|`error`; `action` is `deliver`\|`deliver_tagged`\|`drop`\|`route`. |
@@ -47,3 +48,7 @@ Every metric below is on a dedicated registry (`internal/metrics`), populated at
 | `formelay_build_info` | gauge | `version`, `commit`, `go_version` | Always `1`; join against other series to break them down by build. |
 
 `internal/metrics` also registers the standard Go and process collectors from `prometheus/client_golang/prometheus/collectors` (`go_*`, `process_*`: goroutine count, GC stats, memory, open file descriptors, and so on) — the usual Prometheus Go-runtime metrics, not enumerated individually here.
+
+## Grafana dashboard
+
+[`assets/grafana-dashboard.json`](../assets/grafana-dashboard.json) is an importable Grafana dashboard covering every metric on this page.
